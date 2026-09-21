@@ -1,0 +1,31 @@
+{
+  "abi": "prg32-metadata-1.0",
+  "id": "org.riscv-prg32.dukesofduchesca-napoli97",
+  "title": "DukesOfDuchesca-napoli97",
+  "version": "1.0.0",
+  "summary": "Top-down car-chase homage to The Dukes of Hazzard, set in Napoli in 1997.",
+  "authors": [{"name": "PRG32 contributors"}],
+  "tags": [
+    "game", "driving", "top-down", "chase", "indexed-graphics",
+    "scrolling-map", "napoli", "risc-v"
+  ],
+  "description": "Drive a pimped-up white Fiat 500 classic across a Naples-flavoured 1997 city many screens larger than the viewport. Collect eight essential party items (beer, wine, Sangria Papelis, amplifiers, loudspeakers, a mixer, disco lights and nice girls) scattered across the piazzas, dodge scooter gangs trying to steal the car and police cars curious about it, keep the tank above empty at the scattered gas stations, and reach the party villa to win.",
+  "category": "action",
+  "entry_prefix": "dukes",
+  "viewport": "320x200",
+  "controls": "D-Pad: steer/throttle; A: horn; START: pause/confirm",
+  "license": "MIT",
+  "runtime": {
+    "platform": "PRG32",
+    "isa": "RV32IMAC",
+    "architecture": "qemu",
+    "architectures": [
+      {"id": "esp32c6", "label": "ESP32-C6 hardware", "target": "esp32c6", "display": "ili9341", "isa": "RV32IMAC"},
+      {"id": "qemu", "label": "QEMU virtual screen", "target": "esp32c3", "display": "qemu-rgb", "isa": "RV32IMAC"}
+    ]
+  },
+  "assets": {
+    "icon": {"block": "ICON", "mime": "image/png"},
+    "screenshot": {"block": "SCRN", "mime": "image/png", "optional": true}
+  }
+}

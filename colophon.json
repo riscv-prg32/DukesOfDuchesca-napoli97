@@ -1,0 +1,23 @@
+{
+  "abi": "prg32-colophon-1.0",
+  "title": "DukesOfDuchesca-napoli97",
+  "subtitle": "Napoli, estate 1997",
+  "version": "1.0.0",
+  "developer": {"name": "PRG32 contributors"},
+  "authors": [],
+  "controls": [
+    {"input": "UP", "action": "Accelerate"},
+    {"input": "DOWN", "action": "Brake / reverse"},
+    {"input": "LEFT/RIGHT", "action": "Steer"},
+    {"input": "A", "action": "Honk (scares off nearby scooters)"},
+    {"input": "START", "action": "Pause / confirm on menus"}
+  ],
+  "credits": [
+    "Freely inspired by the TV series 'The Dukes of Hazzard'",
+    "City layout is a stylised homage to Napoli's historic street grid",
+    "and Gulf-of-Naples coastline, not a survey of the real map"
+  ],
+  "copyright": "Copyright 2026 PRG32 contributors",
+  "license": "MIT",
+  "third_party_assets": []
+}
