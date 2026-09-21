@@ -56,6 +56,40 @@ win.
   Vesuvio backdrop, and eight named piazzas plus a Posillipo-style party
   villa. See `citymap.c` for the exact layout rules.
 
+## Soundtrack
+
+An original "Napoli '97" theme, not a transcription of any existing
+recording, using all 8 of PRG32's SID-like procedural synth voices
+(`prg32_audio.h`'s triangle/saw/pulse/noise oscillators with per-voice ADSR
+and stereo pan):
+
+- **Channels 0-5** carry the backing track, one fixed instrument per voice
+  (lead pulse pluck, saw harmony, triangle bass, noise tambourine, a second
+  narrow-pulse mandola arpeggio, and a soft saw pad) -- a fast 6/8
+  tambourine-and-mandola tarantella groove, a galloping arpeggiated
+  "banjo-picking" chase riff evoking the Dukes of Hazzard's country-chase
+  energy, and an Am-G-F-E loop (an Andalusian-cadence-flavoured minor
+  progression that is simultaneously idiomatic Mediterranean folk and one of
+  the most common 90s Eurodance progressions) under a sustained synth pad
+  that opens up in the second half of the loop.
+- **Channels 6-7** are reserved for in-game sound effects (pickup chirp, gas
+  tick, horn honk, chase hit), played with the non-blocking
+  `prg32_audio_note` API -- never the blocking `prg32_buzzer_tone`, which
+  would freeze the game loop for the tone's full duration.
+
+Regenerate and pack it:
+
+```sh
+python3 scripts/gen_music.py                          # writes audio.json
+python3 /path/to/PRG32/tools/prg32audio_pack.py audio.json --out build/audio.block
+```
+
+`build.sh` does this automatically and passes `--audio-block` to
+`prg32 cartridge build`. For a quick listen without any PRG32 tooling,
+`python3 scripts/render_preview_wav.py` renders `assets/theme_preview.wav`
+via a from-scratch, non-bit-exact re-implementation of the same oscillator
+math, purely for host-side review.
+
 ## Project layout
 
 ```
@@ -65,6 +99,9 @@ assets_generated.h      generated 4bpp vehicle + 8bpp villa sprites
 assets_icons.h          hand-authored 8x8 1bpp item/gas icons
 scripts/gen_assets.py   regenerates assets_generated.h
 scripts/gen_marketing_assets.py  regenerates assets/icon.png + screenshot.png
+audio.json               8-voice SID-like soundtrack + SFX instrument bank
+scripts/gen_music.py     regenerates audio.json (the "Napoli '97" theme)
+scripts/render_preview_wav.py  renders audio.json to a host-listenable WAV
 tests/test_citymap.c    host unit tests for the pure map logic
 tests/prg32_stub.c      host stand-in for the PRG32 engine API
 tests/host_harness.c    dynamic fuzz test of the full game loop on host

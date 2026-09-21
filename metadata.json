@@ -7,7 +7,7 @@
   "authors": [{"name": "PRG32 contributors"}],
   "tags": [
     "game", "driving", "top-down", "chase", "indexed-graphics",
-    "scrolling-map", "napoli", "risc-v"
+    "scrolling-map", "napoli", "risc-v", "sid-audio", "tarantella"
   ],
   "description": "Drive a pimped-up white Fiat 500 classic across a Naples-flavoured 1997 city many screens larger than the viewport. Collect eight essential party items (beer, wine, Sangria Papelis, amplifiers, loudspeakers, a mixer, disco lights and nice girls) scattered across the piazzas, dodge scooter gangs trying to steal the car and police cars curious about it, keep the tank above empty at the scattered gas stations, and reach the party villa to win.",
   "category": "action",

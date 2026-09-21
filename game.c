@@ -232,6 +232,16 @@ enum {
 #define ENEMY_SPAWN_RADIUS_MAX 215
 #define ENEMY_DESPAWN_RADIUS 320
 
+/* Sound effects use the non-blocking I2S mixer (channels 6-7), never the
+ * blocking PWM buzzer -- see docs/software/audio_polyphony.md: buzzer calls
+ * sleep the calling task for their full duration, which would freeze
+ * dukes_update() for 60-200ms on every honk/hit/pickup. Channels 0-5 and
+ * their matching instruments 0-5 are reserved for the audio.json backing
+ * track (see scripts/gen_music.py); instruments 6-7 ("sfx_a"/"sfx_b") are
+ * short, punchy voices meant for one-shot game sounds. */
+#define SFX_CH_BLIP 6
+#define SFX_CH_THUD 7
+
 typedef struct {
     int32_t x_q4, y_q4;
     int16_t speed_q4;
@@ -371,7 +381,7 @@ static void update_player(uint32_t input) {
     if (under == CM_T_GAS && s_fuel < FUEL_MAX) {
         s_fuel = duke_min(FUEL_MAX, s_fuel + FUEL_REFILL_RATE);
         if (s_gas_tick <= 0) {
-            prg32_buzzer_tone(700, 40, 300);
+            prg32_audio_note(SFX_CH_BLIP, SFX_CH_BLIP, 77, 150, 45);
             s_gas_tick = 12;
         }
     }
@@ -421,7 +431,7 @@ static void update_enemies(uint32_t pressed) {
 
     int px = (int)(s_player.x_q4 / Q4), py = (int)(s_player.y_q4 / Q4);
     int honk = (pressed & PRG32_BTN_A) != 0;
-    if (honk) prg32_buzzer_tone(300, 120, 600);
+    if (honk) prg32_audio_note(SFX_CH_THUD, SFX_CH_THUD, 62, 220, 130);
 
     for (int i = 0; i < MAX_ENEMIES; ++i) {
         duke_enemy_t *e = &s_enemies[i];
@@ -455,7 +465,7 @@ static void update_enemies(uint32_t pressed) {
             s_trouble++;
             s_invuln = INVULN_FRAMES;
             e->active = 0;
-            prg32_buzzer_tone(150, 200, 700);
+            prg32_audio_note(SFX_CH_THUD, SFX_CH_THUD, 50, 240, 220);
             if (s_trouble >= TROUBLE_MAX) {
                 s_state = ST_LOSE;
                 s_lose_reason = (e->kind == 0) ? REASON_SCOOTER : REASON_POLICE;
@@ -474,7 +484,7 @@ static void update_items_and_party(void) {
                                 ix - 4, iy - 4, 8, 8)) {
             s_collected[i] = 1;
             s_collected_count++;
-            prg32_buzzer_tone(1200, 60, 500);
+            prg32_audio_note(SFX_CH_BLIP, SFX_CH_BLIP, 86, 210, 65);
         }
     }
 
@@ -639,6 +649,12 @@ void dukes_init(void) {
     s_last_input = 0;
     s_frame = 0;
     reset_game();
+
+    /* "Napoli '97" theme: tarantella tambourine/mandola groove plus a
+     * galloping arpeggiated chase riff and a 90s synth pad, on channels
+     * 0-5 (see scripts/gen_music.py / audio.json). Loops via a trailing
+     * JUMP event, so one call here is enough for the whole session. */
+    prg32_audio_play_track(0);
 }
 
 void dukes_update(void) {

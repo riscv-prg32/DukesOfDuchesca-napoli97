@@ -24,6 +24,15 @@ void prg32_buzzer_tone(uint32_t hz, uint32_t ms, uint16_t duty) {
     (void)hz; (void)ms; (void)duty;
 }
 
+void prg32_audio_play_track(uint16_t track_id) { (void)track_id; }
+
+void prg32_audio_note(uint8_t channel, uint8_t instrument, uint8_t note,
+                      uint8_t volume, uint32_t duration_ms) {
+    assert(channel < 8);
+    assert(instrument < 8);
+    (void)note; (void)volume; (void)duration_ms;
+}
+
 void prg32_gfx_clear(uint16_t color) { (void)color; }
 void prg32_gfx_rect(int x, int y, int w, int h, uint16_t color) {
     (void)x; (void)y; (void)w; (void)h; (void)color;

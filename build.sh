@@ -18,12 +18,16 @@ if [ ! -d "$ROOT/components/prg32" ]; then
   exit 1
 fi
 
-mkdir -p "$HERE/dist"
+mkdir -p "$HERE/dist" "$HERE/build"
 cd "$ROOT"
+
+python3 tools/prg32audio_pack.py "$HERE/audio.json" \
+  --out "$HERE/build/dukesofduchesca-napoli97-audio.block"
 
 python3 -m prg32 cartridge build "$HERE/game.c" \
   --portable --entry-prefix dukes --name "dukesofduchesca-napoli97" \
   --architecture "$ARCH" \
+  --audio-block "$HERE/build/dukesofduchesca-napoli97-audio.block" \
   --out "$HERE/dist/dukesofduchesca-napoli97-$ARCH-core.prg32"
 
 python3 -m prg32 store attach-metadata "$HERE/dist/dukesofduchesca-napoli97-$ARCH-core.prg32" \
