@@ -65,7 +65,8 @@ PLACES = ["Piazza del Plebiscito", "San Francesco di Paola", "Palazzo Reale", "M
           "Castel dell'Ovo", "Castel Sant'Elmo", "Stadio San Paolo", "Duomo", "Museo Nazionale",
           "Reggia di Capodimonte", "Villa Doria d'Angri", "Stazione Centrale", "Galleria Umberto I",
           "Centro Direzionale", "Mostra d'Oltremare", "Aeroporto di Capodichino", "Villa Comunale",
-          "Molo Beverello", "Piazza Dante", "Piazza Vanvitelli", "Piazza Mercato", "Piazza dei Martiri"]
+          "Molo Beverello", "Piazza Dante", "Piazza Vanvitelli", "Piazza Mercato", "Piazza dei Martiri",
+          "Rock Garden (start)", "La Duchesca"]
 
 
 def make_map(tmp):

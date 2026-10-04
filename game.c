@@ -260,9 +260,10 @@ static void engine_off(void) {
 /* ---- game state ---------------------------------------------------------
  */
 enum { ST_TITLE = 0, ST_PLAYING, ST_PAUSED, ST_WIN, ST_LOSE };
-enum { REASON_NONE = 0, REASON_SCOOTER, REASON_POLICE, REASON_GAS, REASON_RAUTO };
+enum { REASON_NONE = 0, REASON_SCOOTER, REASON_GAS, REASON_RAUTO };
 enum { KIND_SCOOTER = 0, KIND_POLICE };
-enum { MSG_NONE = 0, MSG_ITEM, MSG_GAS, MSG_ALL, MSG_LOW, MSG_HIT, MSG_NEED, MSG_RAUTI, MSG_BOOM };
+enum { MSG_NONE = 0, MSG_ITEM, MSG_GAS, MSG_ALL, MSG_LOW, MSG_HIT, MSG_NEED, MSG_RAUTI, MSG_BOOM,
+       MSG_SLOW, MSG_SPEEDING, MSG_PASS, MSG_SEARCH, MSG_LOST_THEM };
 
 #define MAX_SPEED_Q4 48
 #define ACCEL_Q4 3
@@ -291,7 +292,22 @@ enum { MSG_NONE = 0, MSG_ITEM, MSG_GAS, MSG_ALL, MSG_LOW, MSG_HIT, MSG_NEED, MSG
 #define RAUTO_BOOM_TICKS 10
 #define MAX_RAUTI 4         /* lit at the same time */
 
-#define MAX_ENEMIES 4
+/* The police. Patrol cars cruise the streets and scooters keep away from
+ * them, so a patrol nearby is good news -- as long as the Fiat behaves.
+ * Above SPEED_LIMIT_Q4 within sight of a patrol for more than a moment, the
+ * patrol gives chase; crossing a checkpoint above it, the Fiat is flagged
+ * down on the spot. Either way: halted and searched. */
+#define SPEED_LIMIT_Q4 32
+#define POLICE_SIGHT 52        /* world pixels */
+#define SPEEDING_GRACE 12      /* ticks of speeding in sight before the chase */
+#define POLICE_SCARES 72       /* how near a patrol makes a scooter turn tail */
+#define CHASE_TICKS 300
+#define HALT_TICKS 80
+#define POLICE_COOLDOWN 240    /* after a search the police leave the Fiat alone */
+#define MAX_POLICE 3
+#define MAX_SCOOTERS 3
+
+#define MAX_ENEMIES 6
 #define MAX_PARTICLES 32
 
 typedef struct {
@@ -303,6 +319,7 @@ typedef struct {
 typedef struct {
     int16_t x, y;      /* world pixels; always on a tile-centre line */
     uint8_t kind, active, dir, scared, acc;
+    uint8_t chasing;   /* a patrol car after the speeding Fiat */
     uint16_t patience; /* ticks before the chaser gives up */
 } duke_enemy_t;
 
@@ -335,7 +352,8 @@ static duke_particle_t s_particles[MAX_PARTICLES];
 static duke_rauto_t s_lit[MAX_RAUTI];
 static uint8_t s_box_taken[CM_RAUTI_COUNT];
 static int s_rauti, s_rauto_cd;
-static int s_poi = -1, s_poi_ticks; /* the point of interest the car is at, and since when */
+static int s_poi = -1, s_poi_ticks;
+static int s_halt, s_police_cd, s_speeding, s_checkpoint = -1, s_searches; /* the point of interest the car is at, and since when */
 static int s_spawn_timer, s_danger;
 static uint32_t s_rng = 0x1997u;
 
@@ -386,6 +404,8 @@ static const char *poi_name(int i) {
     case CM_AT_BEVERELLO: return "MOLO BEVERELLO";
     case CM_AT_DANTE: return "PIAZZA DANTE";
     case CM_AT_VANVITELLI: return "PIAZZA VANVITELLI";
+    case CM_AT_ROCK_GARDEN: return "ROCK GARDEN";
+    case CM_AT_DUCHESCA: return "LA DUCHESCA";
     case CM_AT_MERCATO: return "PIAZZA MERCATO";
     default: return "PIAZZA DEI MARTIRI";
     }
@@ -442,6 +462,8 @@ static void reset_game(void) {
     s_rauti = s_rauto_cd = 0;
     s_poi = -1;
     s_poi_ticks = 0;
+    s_halt = s_police_cd = s_speeding = s_searches = 0;
+    s_checkpoint = -1;
     s_spawn_timer = 120;
     say(MSG_NONE, 0, 0);
     update_camera();
@@ -503,7 +525,8 @@ static void nudge_into_opening(int step_x, int step_y) {
 
 static void update_player(uint32_t input) {
     duke_car_t *c = &s_player;
-    int want = s_fuel > 0 ? wanted_heading(input) : -1;
+    int want = s_fuel > 0 && s_halt == 0 ? wanted_heading(input) : -1;
+    if (s_halt) c->speed_q4 = 0;
 
     if (want >= 0) {
         int diff = (want - c->heading) & 31;
@@ -650,7 +673,15 @@ static void update_rauti(uint32_t pressed) {
         for (int e = 0; e < MAX_ENEMIES; ++e) {
             duke_enemy_t *en = &s_enemies[e];
             if (!en->active) continue;
-            if (duke_abs(en->x - r->x) < RAUTO_RADIUS && duke_abs(en->y - r->y) < RAUTO_RADIUS) {
+            if (en->kind == KIND_POLICE) {
+                /* A patrol that hears the bang comes looking for whoever lit it. */
+                if (duke_abs(en->x - r->x) < 3 * RAUTO_RADIUS && duke_abs(en->y - r->y) < 3 * RAUTO_RADIUS &&
+                    s_police_cd == 0 && !en->chasing) {
+                    en->chasing = 1;
+                    en->patience = CHASE_TICKS;
+                    say(MSG_SPEEDING, 1, 60);
+                }
+            } else if (duke_abs(en->x - r->x) < RAUTO_RADIUS && duke_abs(en->y - r->y) < RAUTO_RADIUS) {
                 en->active = 0;
                 s_score += 150;
                 burst(en->x, en->y, 8, IX_SPARK);
@@ -673,14 +704,31 @@ static const int8_t dir_dy[4] = {-1, 0, 1, 0};
 static void enemy_choose(duke_enemy_t *e) {
     int tx = e->x >> 3, ty = e->y >> 3;
     int goal_x = player_x(), goal_y = player_y();
+    int flee = e->scared != 0, stray = (rnd() & 7u) == 0;
     if (e->kind == KIND_POLICE) {
-        /* The police cut the car off: they aim ahead of it. */
-        goal_x += cm_cos_table[s_player.heading] * s_player.speed_q4 / 256;
-        goal_y += cm_sin_table[s_player.heading] * s_player.speed_q4 / 256;
+        if (e->chasing) {
+            /* A patrol in pursuit cuts the car off: it aims ahead of it. */
+            goal_x += cm_cos_table[s_player.heading] * s_player.speed_q4 / 256;
+            goal_y += cm_sin_table[s_player.heading] * s_player.speed_q4 / 256;
+            stray = 0;
+        } else {
+            stray = 1; /* on patrol: wherever the street leads */
+        }
+    } else {
+        /* A scooter with a patrol car close by forgets the Fiat and runs. */
+        for (int i = 0; i < MAX_ENEMIES; ++i) {
+            const duke_enemy_t *p = &s_enemies[i];
+            if (!p->active || p->kind != KIND_POLICE) continue;
+            if (duke_abs(p->x - e->x) < POLICE_SCARES && duke_abs(p->y - e->y) < POLICE_SCARES) {
+                goal_x = p->x; goal_y = p->y;
+                flee = 1;
+                stray = 0;
+                break;
+            }
+        }
     }
     int best = -1, fallback = -1, random_pick = -1, open = 0;
     int32_t best_score = 0;
-    int stray = (rnd() & 7u) == 0;
     for (int d = 0; d < 4; ++d) {
         int nx = tx + dir_dx[d], ny = ty + dir_dy[d];
         if (cm_tile_is_solid(cm_tile_at(nx, ny))) continue;
@@ -689,7 +737,7 @@ static void enemy_choose(duke_enemy_t *e) {
         if ((rnd() % (uint32_t)open) == 0) random_pick = d;
         int32_t ddx = nx * 8 + 4 - goal_x, ddy = ny * 8 + 4 - goal_y;
         int32_t score = ddx * ddx + ddy * ddy;
-        if (e->scared) score = -score;
+        if (flee) score = -score;
         if (best < 0 || score < best_score) { best = d; best_score = score; }
     }
     if (best >= 0 && stray) best = random_pick;
@@ -698,12 +746,17 @@ static void enemy_choose(duke_enemy_t *e) {
 }
 
 static void spawn_enemy(void) {
-    int slot = -1, active = 0;
+    int slot = -1, scooters = 0, police = 0;
     for (int i = 0; i < MAX_ENEMIES; ++i) {
-        if (s_enemies[i].active) active++;
-        else if (slot < 0) slot = i;
+        if (!s_enemies[i].active) { if (slot < 0) slot = i; }
+        else if (s_enemies[i].kind == KIND_POLICE) police++;
+        else scooters++;
     }
-    if (slot < 0 || active >= 2 + s_collected_count / 3) return;
+    /* There is always more police about than scooters to begin with; the
+     * gangs grow bolder as the boot fills up. */
+    int want_scooter = scooters < duke_min(MAX_SCOOTERS, 1 + s_collected_count / 3);
+    int want_police = police < MAX_POLICE;
+    if (slot < 0 || (!want_scooter && !want_police)) return;
     for (int attempt = 0; attempt < 6; ++attempt) {
         int dx = (int)(rnd() % 45u) - 22, dy = (int)(rnd() % 45u) - 22;
         if (duke_abs(dx) < 12 && duke_abs(dy) < 8) continue; /* off screen only */
@@ -715,11 +768,59 @@ static void spawn_enemy(void) {
         e->active = 1;
         e->scared = 0;
         e->acc = 0;
+        e->chasing = 0;
         e->patience = PATIENCE_TICKS;
         e->dir = (uint8_t)(rnd() & 3u);
-        /* Twice as many scooters as police cars. */
-        e->kind = (rnd() % 3u) == 0 ? KIND_POLICE : KIND_SCOOTER;
+        e->kind = (want_police && (!want_scooter || (rnd() & 1u))) ? KIND_POLICE : KIND_SCOOTER;
         return;
+    }
+}
+
+/* Halted and searched. What the police find is a matter of luck: the rauti
+ * three times out of four, each party item one time in four (two at most).
+ * A confiscated item goes back to where it was found. */
+static void search(void) {
+    int seized = 0, rauti = 0;
+    s_halt = HALT_TICKS;
+    s_police_cd = POLICE_COOLDOWN;
+    s_speeding = 0;
+    s_searches++;
+    s_player.speed_q4 = 0;
+    engine_off();
+    for (int i = 0; i < MAX_ENEMIES; ++i) s_enemies[i].chasing = 0;
+    if (s_rauti > 0 && (rnd() & 3u) != 0) { s_rauti = 0; rauti = 1; }
+    for (int i = 0; i < CM_ITEM_COUNT && seized < 2; ++i) {
+        if (s_collected[i] && (rnd() & 3u) == 0) {
+            s_collected[i] = 0;
+            s_collected_count--;
+            seized++;
+        }
+    }
+    s_score = duke_max(0, s_score - 200 - seized * 250);
+    sfx(CH_FX, I_SIREN, 64, 200, 160, 12);
+    say(MSG_SEARCH, seized * 2 + rauti, HALT_TICKS + 60);
+}
+
+static void update_police_checks(void) {
+    int px = player_x(), py = player_y();
+    if (s_halt > 0) { s_halt--; return; }
+    if (s_police_cd > 0) s_police_cd--;
+
+    /* Checkpoints: judged once, on the way in. */
+    int at = cm_checkpoint_at(px >> 3, py >> 3);
+    if (at != s_checkpoint) {
+        s_checkpoint = at;
+        if (at >= 0 && s_police_cd == 0) {
+            if (s_player.speed_q4 > SPEED_LIMIT_Q4) { search(); return; }
+            s_score += 25;
+            say(MSG_PASS, 0, 45);
+        }
+    }
+    /* A warning while one is coming up fast. */
+    if (at < 0 && s_player.speed_q4 > SPEED_LIMIT_Q4 && s_police_cd == 0 && s_msg_ticks == 0) {
+        int ahead_x = (px + cm_cos_table[s_player.heading] * 40 / 256) >> 3;
+        int ahead_y = (py + cm_sin_table[s_player.heading] * 40 / 256) >> 3;
+        if (cm_checkpoint_at(ahead_x, ahead_y) >= 0) say(MSG_SLOW, 0, 20);
     }
 }
 
@@ -729,7 +830,7 @@ static void update_enemies(uint32_t pressed) {
 
     if (s_enemies_on && --s_spawn_timer <= 0) {
         spawn_enemy();
-        s_spawn_timer = 90 + (int)(rnd() % 120u) - s_collected_count * 6;
+        s_spawn_timer = 60 + (int)(rnd() % 90u) - s_collected_count * 4;
     }
     if (s_honk_cd > 0) s_honk_cd--;
     if (honk) {
@@ -737,23 +838,43 @@ static void update_enemies(uint32_t pressed) {
         sfx(CH_FX, I_HORN, 65, 200, 160, 7);
     }
 
-    int nearest = 9999, siren_x = -1;
+    int nearest = 9999, siren_x = -1, watched = 0, pursued = 0;
+    int speeding = s_player.speed_q4 > SPEED_LIMIT_Q4 && s_police_cd == 0;
     for (int i = 0; i < MAX_ENEMIES; ++i) {
         duke_enemy_t *e = &s_enemies[i];
         if (!e->active) continue;
         int dist = duke_max(duke_abs(px - e->x), duke_abs(py - e->y));
-        if (dist > 220 || --e->patience == 0) { e->active = 0; continue; }
-        if (honk && e->kind == KIND_SCOOTER && dist < HONK_RADIUS && !e->scared) {
-            e->scared = SCARED_TICKS;
-            e->dir = (uint8_t)((e->dir + 2) & 3);
-            s_score += 50;
+        if (e->kind == KIND_POLICE) {
+            if (dist > 220) { e->active = 0; continue; }
+            if (e->chasing && (dist > 150 || --e->patience == 0)) {
+                e->chasing = 0; /* shaken off */
+                say(MSG_LOST_THEM, 0, 60);
+                s_score += 100;
+            }
+            if (!e->chasing && dist < POLICE_SIGHT) {
+                watched = 1;
+                if (speeding && s_speeding >= SPEEDING_GRACE) {
+                    e->chasing = 1;
+                    e->patience = CHASE_TICKS;
+                    s_speeding = 0;
+                    say(MSG_SPEEDING, 0, 60);
+                }
+            }
+        } else {
+            if (dist > 220 || --e->patience == 0) { e->active = 0; continue; }
+            if (honk && dist < HONK_RADIUS && !e->scared) {
+                e->scared = SCARED_TICKS;
+                e->dir = (uint8_t)((e->dir + 2) & 3);
+                s_score += 50;
+            }
+            if (e->scared) e->scared--;
         }
-        if (e->scared) e->scared--;
 
-        /* Scooters are quick, the police relentless; both get keener as the
-         * boot fills up. Always slower than the Fiat flat out. */
-        int speed = (e->kind == KIND_SCOOTER ? 34 : 29) + s_collected_count;
+        /* Scooters are quick and get keener as the boot fills up; a patrol
+         * ambles, and in pursuit is almost as fast as the Fiat flat out. */
+        int speed = e->kind == KIND_SCOOTER ? 34 + s_collected_count : (e->chasing ? 42 : 20);
         if (e->scared) speed = 44;
+        if (s_halt && e->kind == KIND_POLICE) speed = 0; /* busy with the search */
         int budget = e->acc + speed;
         while (budget >= Q4) {
             budget -= Q4;
@@ -766,23 +887,32 @@ static void update_enemies(uint32_t pressed) {
         e->acc = (uint8_t)(budget & (Q4 - 1));
 
         dist = duke_max(duke_abs(px - e->x), duke_abs(py - e->y));
+        if (e->kind == KIND_POLICE) {
+            if (!e->chasing) continue;
+            pursued = 1;
+            siren_x = duke_clamp(screen_x(e->x), 0, 319);
+            if (dist < 2 * CM_CAR_HALF + 4 && s_halt == 0) { search(); return; }
+            continue;
+        }
         if (!e->scared && dist < nearest) nearest = dist;
-        if (e->kind == KIND_POLICE && dist < 110) siren_x = duke_clamp(screen_x(e->x), 0, 319);
-
-        if (s_invuln == 0 && dist < 2 * CM_CAR_HALF) {
+        if (s_invuln == 0 && s_halt == 0 && dist < 2 * CM_CAR_HALF) {
             e->active = 0;
             sfx(CH_NOISE, I_NOISE, 30, 230, screen_x(e->x), 8);
             say(MSG_HIT, e->kind, 60);
-            if (trouble(e->kind == KIND_SCOOTER ? REASON_SCOOTER : REASON_POLICE, e->x, e->y)) return;
+            if (trouble(REASON_SCOOTER, e->x, e->y)) return;
         }
     }
 
-    /* A two-tone siren from wherever the nearest police car is. */
+    /* Speeding under the eyes of a patrol: a moment's grace, then the chase. */
+    if (watched && speeding) s_speeding++;
+    else if (s_speeding > 0) s_speeding--;
+
+    /* A two-tone siren from wherever the pursuing car is. */
     if (siren_x >= 0 && (s_tick & 7u) == 0 && s_sfx_left[CH_NOISE - CH_ENGINE] == 0)
         sfx(CH_NOISE, I_SIREN, (s_tick & 8u) ? 76 : 71, 120, siren_x, 6);
 
     /* The band plays faster when someone is on the Fiat's tail. */
-    s_danger = nearest < 80;
+    s_danger = nearest < 80 || pursued;
     int tempo = s_danger ? 172 : 150;
     if (tempo != s_tempo) {
         s_tempo = tempo;
@@ -854,6 +984,7 @@ static void step(uint32_t input, uint32_t pressed) {
         if (s_dusk < DUSK_MAX && s_play_ticks % DUSK_TICKS == 0) s_dusk++;
         if (s_invuln > 0) s_invuln--;
         update_player(input);
+        if (s_state == ST_PLAYING) update_police_checks();
         if (s_state == ST_PLAYING) update_rauti(pressed);
         if (s_state == ST_PLAYING) update_enemies(pressed);
         if (s_state == ST_PLAYING) update_items_and_party();
@@ -1147,6 +1278,14 @@ static void draw_monument(int style, int w, int h) {
         lm(42, 30, 4, 16, IX_SHADOW); slab(28, 26, 14, 18, IX_GLASS);
         lm(4, 4, 2, 10, IX_LIGHT); lm(20, 8, 2, 16, IX_LIGHT); lm(30, 28, 2, 12, IX_LIGHT);
         break;
+    case CM_POI_CLUB: /* the Rock Garden: a dark doorway under a neon sign */
+        slab(0, 0, w, h, IX_TRACK);
+        lm(2, 2, w - 4, h - 5, IX_SHADOW);
+        lm(3, 4, w - 6, 5, IX_BLACK);
+        lm(4, 5, w - 8, 1, IX_PARTY0); lm(4, 7, w - 8, 1, IX_PARTY1);
+        lm(5, 12, 2, 6, IX_PARTY1); lm(9, 12, 2, 6, IX_PARTY0); /* the amps by the stage */
+        lm(0, h / 2 - 2, 2, 5, IX_BLACK); lm(0, h / 2 - 2, 1, 1, IX_SPARK); /* the door, on the vico */
+        break;
     case CM_POI_FAIR: /* Mostra d'Oltremare: the gardens and the fountain of the Esedra */
         lm(0, 0, w, h, IX_PARK);
         lm(18, 12, 28, 24, IX_PAVE);
@@ -1191,6 +1330,36 @@ static void draw_vehicle(const uint8_t *pixels, const uint16_t *pal, int colours
                          int heading8, int sx, int sy) {
     sprite4(pixels, pal, colours, DUKE_VEHICLE_SIZE, DUKE_VEHICLE_SIZE, DUKE_VEHICLE_FRAMES,
             heading8 & 7, sx - DUKE_VEHICLE_SIZE / 2, sy - DUKE_VEHICLE_SIZE / 2);
+}
+
+/* A posto di blocco: red-and-white barriers that leave a chicane, and a
+ * patrol car at the kerb. Nothing here is solid; it is the speed that
+ * matters. */
+static void draw_checkpoints(int cam_x, int cam_y) {
+    for (int i = 0; i < CM_CHECKPOINT_COUNT; ++i) {
+        const cm_poi_t *c = &cm_checkpoints[i];
+        int w = c->w * CM_TILE_PX, h = c->h * CM_TILE_PX;
+        s_lm_x = c->x * TILE_SCREEN - cam_x;
+        s_lm_y = c->y * TILE_SCREEN - cam_y;
+        if (s_lm_x >= PRG32_GAME_W || s_lm_y >= PRG32_GAME_H || s_lm_x + w * ZOOM <= 0 ||
+            s_lm_y + h * ZOOM <= 0)
+            continue;
+        for (int k = 0; k < 4; ++k) {
+            int stripe = (k & 1) ? IX_WHITE : IX_RED;
+            if (c->h == 3) { /* across a decumano */
+                lm(0, k * 3, 3, 3, stripe);
+                lm(w - 3, h - 3 - k * 3, 3, 3, stripe);
+            } else {         /* across a cardo */
+                lm(k * 2, 0, 2, 3, stripe);
+                lm(w - 2 - k * 2, h - 3, 2, 3, stripe);
+            }
+        }
+        /* The patrol car of the checkpoint, parked against the kerb. */
+        if (c->h == 3) draw_vehicle(duke_police_pixels, w_police, DUKE_POLICE_COLOURS, 2,
+                                    s_lm_x + w, s_lm_y + 6 * ZOOM);
+        else draw_vehicle(duke_police_pixels, w_police, DUKE_POLICE_COLOURS, 0,
+                          s_lm_x + 5 * ZOOM, s_lm_y + h);
+    }
 }
 
 /* The nearest thing still to fetch: an item, or the villa once the boot is full. */
@@ -1239,6 +1408,7 @@ static void draw_world(void) {
     }
     draw_city(cam_x, cam_y);
     draw_monuments(cam_x, cam_y);
+    draw_checkpoints(cam_x, cam_y);
 
     sprite4(duke_villa_pixels, w_villa, DUKE_VILLA_COLOURS, DUKE_VILLA_WIDTH, DUKE_VILLA_HEIGHT, 1, 0,
             cm_party_point.x * TILE_SCREEN - DUKE_VILLA_WIDTH / 2 - cam_x,
@@ -1321,9 +1491,15 @@ static void draw_hud(void) {
     box(0, 0, PRG32_GAME_W, 12, IX_BLACK);
     text(2, 2, "GAS", PRG32_COLOR_WHITE);
     int low = s_fuel < FUEL_MAX / 5;
-    box(30, 3, 66, 6, IX_RADAR);
+    box(30, 2, 66, 5, IX_RADAR);
     if (!low || (s_tick & 8u))
-        box(31, 4, s_fuel * 64 / FUEL_MAX, 4, low ? IX_RED : IX_GREEN);
+        box(31, 3, s_fuel * 64 / FUEL_MAX, 3, low ? IX_RED : IX_GREEN);
+    /* The speedometer: white up to the limit the police tolerate, red beyond. */
+    box(30, 8, 66, 3, IX_RADAR);
+    box(31, 8, duke_min(s_player.speed_q4, SPEED_LIMIT_Q4) * 64 / MAX_SPEED_Q4, 3, IX_WHITE);
+    if (s_player.speed_q4 > SPEED_LIMIT_Q4)
+        box(31 + SPEED_LIMIT_Q4 * 64 / MAX_SPEED_Q4, 8,
+            (s_player.speed_q4 - SPEED_LIMIT_Q4) * 64 / MAX_SPEED_Q4, 3, IX_RED);
 
     for (int i = 0; i < CM_ITEM_COUNT; ++i) {
         if (s_collected[i]) icon(duke_item_icons[i], w_items[i], 104 + i * 10, 2);
@@ -1346,6 +1522,8 @@ static void draw_hud(void) {
     }
     for (int i = 0; i < CM_GAS_COUNT; ++i)
         box(rx + cm_gas_points[i].x / 5, ry + cm_gas_points[i].y / 5, 1, 1, IX_GAS);
+    for (int i = 0; i < CM_CHECKPOINT_COUNT; ++i)
+        box(rx + cm_checkpoints[i].x / 5, ry + cm_checkpoints[i].y / 5, 1, 1, IX_WHITE);
     for (int i = 0; i < CM_RAUTI_COUNT; ++i)
         if (!s_box_taken[i])
             box(rx + cm_rauti_points[i].x / 5, ry + cm_rauti_points[i].y / 5, 1, 1, IX_RED);
@@ -1355,7 +1533,8 @@ static void draw_hud(void) {
     box(rx + cm_party_point.x / 5, ry + cm_party_point.y / 5, 2, 2, IX_MAGENTA);
     for (int i = 0; i < MAX_ENEMIES; ++i)
         if (s_enemies[i].active && (s_tick & 4u))
-            box(rx + s_enemies[i].x / 40, ry + s_enemies[i].y / 40, 2, 2, IX_RED);
+            box(rx + s_enemies[i].x / 40, ry + s_enemies[i].y / 40, 2, 2,
+                s_enemies[i].kind == KIND_POLICE ? IX_SEA2 : IX_RED);
     box(rx + player_x() / 40, ry + player_y() / 40, 2, 2, IX_WHITE);
 
     /* Where the car is: the name of the place, yellow as it comes into view. */
@@ -1371,9 +1550,24 @@ static void draw_hud(void) {
         case MSG_NEED: text_centred(172, "NO PARTY WITHOUT THE GEAR", PRG32_COLOR_YELLOW); break;
         case MSG_RAUTI: text_centred(172, "A BOX OF RAUTI: B LIGHTS ONE", w_rauti); break;
         case MSG_BOOM: text_centred(172, "TOO CLOSE TO YOUR OWN RAUTO!", PRG32_COLOR_RED); break;
-        case MSG_HIT:
-            text_centred(172, s_msg_arg == KIND_SCOOTER ? "SCOOTER GANG!" : "POLIZIA!", PRG32_COLOR_RED);
+        case MSG_HIT: text_centred(172, "SCOOTER GANG!", PRG32_COLOR_RED); break;
+        case MSG_SLOW: text_centred(172, "POSTO DI BLOCCO: EASY NOW!", PRG32_COLOR_YELLOW); break;
+        case MSG_PASS: text_centred(172, "BUONASERA. CARRY ON.", PRG32_COLOR_CYAN); break;
+        case MSG_LOST_THEM: text_centred(172, "YOU LOST THEM", PRG32_COLOR_GREEN); break;
+        case MSG_SPEEDING:
+            text_centred(172, s_msg_arg ? "POLIZIA! WHO LIT THAT?" : "POLIZIA! YOU ARE SPEEDING",
+                         PRG32_COLOR_CYAN);
             break;
+        case MSG_SEARCH: {
+            const char *found = "SEARCHED: NOTHING FOUND";
+            if (s_msg_arg == 1) found = "SEARCHED: RAUTI SEIZED";
+            else if (s_msg_arg & 1) found = "SEARCHED: RAUTI AND GEAR SEIZED";
+            else if (s_msg_arg >= 4) found = "SEARCHED: TWO ITEMS SEIZED";
+            else if (s_msg_arg >= 2) found = "SEARCHED: AN ITEM SEIZED";
+            text_centred(160, s_halt ? "ALT! POLIZIA. PAPERS, PLEASE." : "ON YOUR WAY.", PRG32_COLOR_CYAN);
+            text_centred(172, found, s_msg_arg ? PRG32_COLOR_RED : PRG32_COLOR_GREEN);
+            break;
+        }
         default: break;
         }
     }
@@ -1433,7 +1627,7 @@ static void draw_title(void) {
     box(20, 46, 280, 2, IX_YELLOW);
     text_centred(21, "D U K E S   O F   D U C H E S C A", PRG32_COLOR_YELLOW);
     text_centred(34, "- NAPOLI, SUMMER 1997 -", PRG32_COLOR_WHITE);
-    text_centred(54, "8 PARTY ITEMS. ONE FIAT 500.", PRG32_COLOR_WHITE);
+    text_centred(54, "FROM THE ROCK GARDEN TO THE PARTY", PRG32_COLOR_WHITE);
     if (s_best > 0) {
         text(104, 150, "BEST", PRG32_COLOR_CYAN);
         text(144, 150, duke_utoa((unsigned)s_best, buf, 6), PRG32_COLOR_WHITE);
@@ -1492,13 +1686,12 @@ void dukes_draw(void) {
     draw_hud();
 
     if (s_state == ST_PAUSED) {
-        draw_panel("PAUSED", "D-PAD: DRIVE THAT WAY", "A: HORN   B: LIGHT A RAUTO", IX_WHITE,
+        draw_panel("PAUSED", "EASY PAST THE POLIZIA", "A: HORN   B: LIGHT A RAUTO", IX_WHITE,
                    PRG32_COLOR_CYAN);
     } else if (s_state == ST_WIN) {
         draw_panel("PARTY TIME!", "YOU MADE IT TO THE VILLA", 0, IX_PARTY0, PRG32_COLOR_YELLOW);
     } else if (s_state == ST_LOSE) {
         const char *why = "THEY STOLE THE CINQUECENTO!";
-        if (s_lose_reason == REASON_POLICE) why = "BUSTED BY THE POLIZIA!";
         if (s_lose_reason == REASON_GAS) why = "RAN DRY IN THE VICOLI!";
         if (s_lose_reason == REASON_RAUTO) why = "BLOWN UP BY YOUR OWN RAUTO!";
         draw_panel("GAME OVER", why, 0, IX_RED, PRG32_COLOR_RED);
@@ -1532,6 +1725,29 @@ void duke_test_set_dusk(int dusk) { s_dusk = (uint8_t)dusk; }
 int duke_test_rauti(void) { return s_rauti; }
 void duke_test_set_rauti(int n) { s_rauti = n; }
 int duke_test_poi(void) { return s_poi; }
+int duke_test_speed(void) { return s_player.speed_q4; }
+int duke_test_halt(void) { return s_halt; }
+int duke_test_searches(void) { return s_searches; }
+int duke_test_chasing(void) {
+    int n = 0;
+    for (int i = 0; i < MAX_ENEMIES; ++i) n += s_enemies[i].active && s_enemies[i].chasing;
+    return n;
+}
+int duke_test_enemy_kind(int i) { return s_enemies[i].kind; }
+void duke_test_teleport(int x, int y) {
+    s_player.x_q4 = (int32_t)x * Q4; s_player.y_q4 = (int32_t)y * Q4;
+    s_player.speed_q4 = 0;
+    update_camera();
+}
+void duke_test_clear_enemies(void) {
+    for (int i = 0; i < MAX_ENEMIES; ++i) s_enemies[i].active = 0;
+}
+void duke_test_place_enemy(int i, int kind, int x, int y) {
+    duke_enemy_t *e = &s_enemies[i];
+    e->x = (int16_t)x; e->y = (int16_t)y;
+    e->kind = (uint8_t)kind; e->active = 1; e->scared = 0; e->acc = 0; e->chasing = 0;
+    e->dir = 0; e->patience = PATIENCE_TICKS;
+}
 void duke_test_refuel(void) { s_fuel = FUEL_MAX; }
 int duke_test_lit(void) {
     int n = 0;

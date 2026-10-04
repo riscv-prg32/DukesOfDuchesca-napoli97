@@ -4,9 +4,12 @@ A [PRG32](https://github.com/riscv-prg32/PRG32) cartridge: a top-down
 car-chase game freely inspired by *The Dukes of Hazzard*, relocated to
 Napoli in the summer of 1997.
 
-You drive a pimped-up white Fiat 500 across a city many times larger than the
-screen, chased by scooter gangs who want to steal your ride and police cars
-who are curious about it. Collect the eight things no party can do without —
+The night starts outside the **Rock Garden**, the underground rock club of
+Via San Giovanni Maggiore Pignatelli, in the vicoli of the university quarter
+a few doors from the Rettifilo and a short drive from the Duchesca. You drive
+a pimped-up white Fiat 500 across a city many times larger than the screen,
+chased by scooter gangs who want to steal your ride and watched by police
+patrols who will leave you alone as long as you drive past them slowly. Collect the eight things no party can do without —
 beer, wine, Sangria Papelis, an amplifier, loudspeakers, a mixer, disco
 lights and nice girls — keep an eye on the fuel gauge, and reach the party
 villa at Posillipo, Villa Doria d'Angri, before the night is over.
@@ -29,19 +32,38 @@ Facing the wrong way it brakes while it turns, so a U-turn stays inside the
 street, and if you take a turning up to seven pixels early or late the car is
 nudged into the opening instead of stopping against the corner.
 
+**The police.** Patrol cars cruise the streets (blue on the radar) and
+scooters run from them, so a patrol nearby is cover. But the white bar under
+the fuel gauge is your speed, and where it turns red you are over the limit
+the police tolerate (two thirds of flat out):
+
+- cross one of the seven *posti di blocco* (striped barriers and a parked
+  patrol car; white dots on the radar) over the limit and you are flagged
+  down on the spot; roll through with the D-pad released and you are waved on;
+- speed under the eyes of a patrol for more than a moment and it gives
+  chase, siren on; outrun it for ten seconds or get 150 pixels away and it
+  gives up;
+- light a rauto within earshot of a patrol and it comes looking.
+
+Caught or flagged down, the Fiat is halted for a few seconds and searched.
+What they find is luck: the rauti three times out of four, each party item
+one time in four (two at most). A confiscated item goes back to the piazza
+it came from. After a search the police leave you alone for eight seconds.
+The police never damage the car: only scooters and your own rauti do.
+
 **Rauti.** A *rauto* is a banger. Seven boxes of twenty are lying around the
-city (red dots on the radar, the first a block north of the start). B lights
+city (red dots on the radar, the first behind Piazza del Plebiscito). B lights
 one and leaves it where the car is; two seconds later it goes off and takes
-out every scooter and police car within 30 pixels — and dents the Fiat, like
-a chaser would, if it has not driven clear by then. Up to four can be burning
+out every scooter within 30 pixels — and dents the Fiat, like a scooter
+would, if it has not driven clear by then. Up to four can be burning
 at once.
 
 The yellow arrow orbiting the car points at the nearest item still missing;
 it turns magenta and points at the villa once the boot is full. The radar in
 the corner shows the whole gulf: items blink yellow, gas stations are orange,
-the villa is magenta. Three brushes with a scooter or the police and the
-night is over; so is an empty tank. Chasers that cannot catch you in twenty
-seconds give up.
+the villa is magenta. Three brushes with a scooter (or your own rauti) and the
+night is over; so is an empty tank. A scooter that cannot catch you in twenty
+seconds gives up.
 
 ## The city
 
@@ -68,14 +90,14 @@ street atlas — drawn from memory of it, not copied and not to scale:
 - **the north**: the Camaldoli hill, the woods and the Reggia of Capodimonte,
   the runway of Capodichino.
 
-Twenty-two **points of interest** stand where a visitor would look for them,
+Twenty-four **points of interest** stand where a visitor would look for them,
 and the name of the place comes up on screen as the car reaches it
 ([all of them](release-artifacts/points-of-interest.png)). The monuments are
 buildings you drive around, each drawn in its own shape: Piazza del
 Plebiscito between the dome and colonnade of San Francesco di Paola and the
 red front of Palazzo Reale; the five towers of the Maschio Angioino by the
 port; Castel dell'Ovo on its islet; the star of Castel Sant'Elmo on the
-Vomero; the Stadio San Paolo with its pitch; the Duomo; the Museo
+Vomero; the Rock Garden under its neon sign; the Stadio San Paolo with its pitch; the Duomo; the Museo
 Archeologico Nazionale at the top of Via Toledo; the Reggia di Capodimonte in
 its woods; the Stazione Centrale with its tracks; the Galleria Umberto I; the
 glass towers of the Centro Direzionale; the Mostra d'Oltremare. The party is
@@ -83,7 +105,7 @@ at Villa Doria d'Angri.
 
 It is 220x130 tiles (1760x1040 world px, 114 screens at this zoom) and stores
 no tile array: [`citymap.c`](citymap.c) computes every tile on demand from a
-coastline of 14 corner points, 22 points of interest, 30 named rectangles and
+coastline of 14 corner points, 24 points of interest, 7 checkpoints, 30 named rectangles and
 modulo arithmetic.
 
 ## How it uses the PRG32 firmware
@@ -156,9 +178,12 @@ PRG32_REPO=/path/to/PRG32 ./test.sh
   open tile is connected to the start, and that the coast has the shape of
   the gulf.
 - `tests/host_harness.c` runs the real `game.c`: it checks the rauto's fuse
-  to the tick (driven away from: no damage; sat on: one knock), an autopilot
+  to the tick (driven away from: no damage; sat on: one knock) and the
+  police (a scooter runs from a patrol; a slow pass is ignored; speeding is
+  chased and searched; a checkpoint at speed halts, a slow one waves on), an
+  autopilot
   wins the game on empty streets (all eight items, refuelling on the way),
-  makes a grand tour of all 22 points of interest, plays twelve nights in
+  makes a grand tour of all 24 points of interest, plays twelve nights in
   traffic, then 60,000 fuzzed frames. Every frame asserts that the
   car and the chasers never overlap solid ground and that the QEMU and
   ESP32-C6 display models show the same picture, pixel for pixel. The build

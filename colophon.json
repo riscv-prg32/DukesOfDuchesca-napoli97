@@ -2,20 +2,21 @@
   "abi": "prg32-colophon-1.0",
   "title": "Dukes of Duchesca - Napoli '97",
   "subtitle": "Napoli, estate 1997",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "release_date": "2026-10-04",
   "developer": {"name": "PRG32 contributors"},
   "authors": ["PRG32 contributors"],
   "license": "MIT",
   "acknowledgements": [
     "Freely inspired by the TV series 'The Dukes of Hazzard'",
+    "In memory of the Rock Garden, Via San Giovanni Maggiore Pignatelli 26: a temple of the Neapolitan underground of the 1990s",
     "The city is a stylised Napoli drawn from memory of a street atlas, not a survey",
     "Original soundtrack: a serenade, a tarantella, a 90s dance loop",
     "Built for riscv-prg32/PRG32 main"
   ],
   "content_notice": "Unofficial homage, not affiliated with the rights holders of the series it nods to. Code, artwork, music and effects are original.",
   "controls": [
-    {"input": "D-Pad", "action": "Point where to go: the car turns that way and accelerates"},
+    {"input": "D-Pad", "action": "Point where to go: the car turns that way and accelerates; let go to slow down for the police"},
     {"input": "A", "action": "Horn: scares off the scooters nearby"},
     {"input": "B", "action": "Light a rauto: it goes off two seconds later, drive clear"},
     {"input": "START", "action": "Start, pause"}

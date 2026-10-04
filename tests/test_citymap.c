@@ -118,13 +118,32 @@ static void test_points_of_interest(void) {
             }
         if (!around) { fprintf(stderr, "point of interest %d cannot be visited\n", i); assert(0); }
     }
-    assert(cm_poi_near(cm_start_point.x, cm_start_point.y) == CM_AT_PLEBISCITO);
+    assert(cm_poi_near(cm_start_point.x, cm_start_point.y) == CM_AT_ROCK_GARDEN);
+    /* The Rock Garden stands a few doors from the Rettifilo, and the Duchesca
+     * is a short drive east of it. */
+    assert(cm_pois[CM_AT_DUCHESCA].x - cm_start_point.x < 24);
+    assert(cm_tile_at(152, 84) == CM_T_ROAD && 84 - cm_start_point.y < 10);
     assert(cm_poi_near(cm_party_point.x, cm_party_point.y) == CM_AT_VILLA_DORIA);
     assert(cm_poi_near(2, 30) == -1);
 }
 
 static void test_landmarks_are_reachable(void) {
-    assert(cm_tile_at(cm_start_point.x, cm_start_point.y) == CM_T_PIAZZA);
+    assert(cm_tile_at(cm_start_point.x, cm_start_point.y) == CM_T_ROAD);
+    for (int i = 0; i < CM_CHECKPOINT_COUNT; ++i) {
+        /* A checkpoint lies on plain street, spans its whole width, and can
+         * be reached; the start is not inside one. */
+        const cm_poi_t *c = &cm_checkpoints[i];
+        for (int ty = c->y; ty < c->y + c->h; ++ty)
+            for (int tx = c->x; tx < c->x + c->w; ++tx) {
+                uint8_t t = cm_tile_at(tx, ty);
+                assert(t == CM_T_ROAD || t == CM_T_ROAD_LINE);
+                assert(cm_checkpoint_at(tx, ty) == i);
+                assert(seen[ty * CM_TILE_PX + 4][tx * CM_TILE_PX + 4]);
+            }
+        if (c->h == 3) assert(cm_tile_is_solid(cm_tile_at(c->x, c->y - 1)) && cm_tile_is_solid(cm_tile_at(c->x, c->y + 3)));
+        else assert(cm_tile_is_solid(cm_tile_at(c->x - 1, c->y)) && cm_tile_is_solid(cm_tile_at(c->x + 2, c->y)));
+    }
+    assert(cm_checkpoint_at(cm_start_point.x, cm_start_point.y) == -1);
     assert(cm_tile_at(cm_party_point.x, cm_party_point.y) == CM_T_PARTY);
     assert(reachable(cm_party_point));
     for (int i = 0; i < CM_ITEM_COUNT; ++i) {

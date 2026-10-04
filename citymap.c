@@ -62,7 +62,28 @@ const cm_poi_t cm_pois[CM_POI_COUNT] = {
     {84, 60, 6, 6, CM_POI_PLACE},        /* Piazza Vanvitelli */
     {166, 84, 8, 6, CM_POI_PLACE},       /* Piazza Mercato */
     {112, 84, 6, 4, CM_POI_PLACE},       /* Piazza dei Martiri */
+    {148, 76, 2, 3, CM_POI_CLUB},        /* the Rock Garden, Via S. Giovanni Maggiore Pignatelli */
+    {163, 67, 9, 9, CM_POI_PLACE},       /* La Duchesca, between the station and Porta Capuana */
 };
+
+/* Posti di blocco: across a decumano (2x3 tiles) or a cardo (2x2). */
+const cm_poi_t cm_checkpoints[CM_CHECKPOINT_COUNT] = {
+    {120, 80, 2, 3, 0},  /* towards Chiaia */
+    {168, 64, 2, 3, 0},  /* at the Duchesca */
+    {90, 96, 2, 3, 0},   /* the road to Posillipo */
+    {44, 80, 2, 3, 0},   /* Fuorigrotta */
+    {152, 52, 2, 2, 0},  /* Via Duomo, by the cathedral */
+    {100, 32, 2, 3, 0},  /* the Vomero */
+    {128, 24, 2, 2, 0},  /* the road up to Capodimonte */
+};
+
+int cm_checkpoint_at(int tx, int ty) {
+    for (int i = 0; i < CM_CHECKPOINT_COUNT; ++i) {
+        const cm_poi_t *c = &cm_checkpoints[i];
+        if (tx >= c->x && tx < c->x + c->w && ty >= c->y && ty < c->y + c->h) return i;
+    }
+    return -1;
+}
 
 static int cm_poi_within(const cm_poi_t *p, int tx, int ty, int margin) {
     return tx >= p->x - margin && tx < p->x + p->w + margin && ty >= p->y - margin &&
@@ -115,7 +136,7 @@ const cm_zone_t cm_zones[] = {
 };
 const int cm_zone_count = (int)(sizeof(cm_zones) / sizeof(cm_zones[0]));
 
-const cm_point_t cm_start_point = {136, 91};
+const cm_point_t cm_start_point = {147, 77};
 const cm_point_t cm_party_point = {65, 112};
 
 const cm_point_t cm_gas_points[CM_GAS_COUNT] = {
@@ -123,7 +144,7 @@ const cm_point_t cm_gas_points[CM_GAS_COUNT] = {
 };
 
 const cm_point_t cm_rauti_points[CM_RAUTI_COUNT] = {
-    {140, 85},  /* Via Toledo, a block from the start */
+    {140, 85},  /* Via Toledo, behind Piazza del Plebiscito */
     {114, 86},  /* Piazza dei Martiri */
     {155, 104}, /* Molo Beverello */
     {129, 11},  /* the forecourt of the Reggia di Capodimonte */

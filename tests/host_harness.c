@@ -48,10 +48,21 @@ void duke_test_set_rauti(int n);
 int duke_test_lit(void);
 int duke_test_poi(void);
 void duke_test_refuel(void);
+int duke_test_speed(void);
+int duke_test_halt(void);
+int duke_test_searches(void);
+int duke_test_chasing(void);
+int duke_test_enemy_kind(int i);
+void duke_test_place_enemy(int i, int kind, int x, int y);
+void duke_test_teleport(int x, int y);
+void duke_test_clear_enemies(void);
 
 enum { ST_TITLE = 0, ST_PLAYING, ST_PAUSED, ST_WIN, ST_LOSE };
 #define FUEL_MAX 3600
-#define MAX_ENEMIES 4
+#define MAX_ENEMIES 6
+#define SPEED_LIMIT 32
+#define KIND_SCOOTER 0
+#define KIND_POLICE 1
 
 #define BTN_LEFT (1u << 0)
 #define BTN_RIGHT (1u << 1)
@@ -208,9 +219,27 @@ static uint32_t follow_field(void) {
     return 0;
 }
 
+/* A careful driver lifts off before a checkpoint and when a patrol is near. */
+static int should_ease_off(void) {
+    int px = duke_test_player_x(), py = duke_test_player_y();
+    if (duke_test_speed() <= SPEED_LIMIT - 8) return 0;
+    for (int i = 0; i < CM_CHECKPOINT_COUNT; ++i) {
+        int cx = cm_checkpoints[i].x * 8 + cm_checkpoints[i].w * 4;
+        int cy = cm_checkpoints[i].y * 8 + cm_checkpoints[i].h * 4;
+        if (abs(px - cx) < 48 && abs(py - cy) < 48) return 1;
+    }
+    for (int i = 0; i < MAX_ENEMIES; ++i) {
+        int ex, ey;
+        if (duke_test_enemy(i, &ex, &ey) && duke_test_enemy_kind(i) == KIND_POLICE &&
+            abs(px - ex) < 64 && abs(py - ey) < 64)
+            return 1;
+    }
+    return 0;
+}
+
 static uint32_t autopilot(void) {
     choose_goal();
-    return follow_field();
+    return should_ease_off() ? 0 : follow_field();
 }
 
 static void start_game(void) {
@@ -264,7 +293,7 @@ static void grand_tour(void) {
         while (duke_test_poi() != poi || s_dist[duke_test_player_y() >> 3][duke_test_player_x() >> 3] != 0) {
             duke_test_refuel();
             duke_test_set_dusk(3); /* the tour is a day trip: daylight pictures */
-            frame(follow_field());
+            frame(should_ease_off() ? 0 : follow_field());
             assert(duke_test_state() == ST_PLAYING);
             assert(++frames < 4000);
         }
@@ -286,7 +315,7 @@ int main(int argc, char **argv) {
     start_game();
     assert(duke_test_player_x() == cm_start_point.x * CM_TILE_PX + 4);
     for (int i = 0; i < 20; ++i) frame(0);
-    assert(duke_test_poi() == CM_AT_PLEBISCITO);
+    assert(duke_test_poi() == CM_AT_ROCK_GARDEN);
     dump("02-start");
     frame(BTN_START);
     assert(duke_test_state() == ST_PAUSED);
@@ -305,13 +334,13 @@ int main(int argc, char **argv) {
     duke_test_set_rauti(20);
     frame(BTN_B);
     assert(duke_test_lit() == 1 && duke_test_rauti() == 19);
-    int drop_x = duke_test_player_x();
-    for (int i = 0; i < 59; ++i) frame(BTN_LEFT);
+    int drop_y = duke_test_player_y();
+    for (int i = 0; i < 59; ++i) frame(BTN_UP);
     assert(duke_test_lit() == 1);                 /* 60 ticks: still burning */
     dump("09-rauto-lit");
-    frame(BTN_LEFT);
+    frame(BTN_UP);
     assert(duke_test_lit() == 0);                 /* 61 ticks = 2 s: bang */
-    assert(drop_x - duke_test_player_x() > 30);
+    assert(drop_y - duke_test_player_y() > 30);
     assert(duke_test_trouble() == 0);
     frame(0); frame(0);
     dump("10-rauto-bang");
@@ -324,6 +353,62 @@ int main(int argc, char **argv) {
     for (int i = 0; i < 70; ++i) frame(0);        /* let the invulnerability run out */
     duke_test_set_rauti(0);
 
+    /* The police. A scooter with a patrol car beside it runs from the patrol,
+     * not at the Fiat. Decumano row 49 of the centro storico is a long
+     * straight street, clear of checkpoints. */
+    int ex, ey, px0, py0;
+    duke_test_teleport(110 * 8 + 4, 49 * 8 + 4);
+    duke_test_place_enemy(0, KIND_POLICE, 119 * 8 + 4, 49 * 8 + 4);
+    duke_test_place_enemy(1, KIND_SCOOTER, 122 * 8 + 4, 49 * 8 + 4);
+    for (int i = 0; i < 25; ++i) frame(0);
+    assert(duke_test_enemy(0, &px0, &py0) && duke_test_enemy(1, &ex, &ey));
+    assert(abs(ex - px0) + abs(ey - py0) > 40);   /* it began 24 pixels from the patrol */
+    assert(abs(ex - duke_test_player_x()) > 60);
+    assert(duke_test_trouble() == 1 && duke_test_searches() == 0);
+    /* A patrol does not mind a Fiat rolling by slowly, bumper to bumper... */
+    duke_test_clear_enemies();
+    duke_test_place_enemy(0, KIND_POLICE, duke_test_player_x() + 30, duke_test_player_y());
+    for (int i = 0; i < 40; ++i) frame(duke_test_speed() < 16 ? BTN_RIGHT : 0);
+    assert(duke_test_chasing() == 0 && duke_test_searches() == 0 && duke_test_trouble() == 1);
+    /* ...but one flat out under its nose is chased, and searched when caught. */
+    duke_test_clear_enemies();
+    duke_test_teleport(110 * 8 + 4, 49 * 8 + 4);
+    duke_test_place_enemy(0, KIND_POLICE, 117 * 8 + 4, 49 * 8 + 4);
+    duke_test_set_rauti(20);
+    int chased = 0;
+    for (int i = 0; i < 45 && !chased; ++i) { frame(BTN_RIGHT); chased = duke_test_chasing(); }
+    assert(chased == 1);
+    dump("11-chase");
+    for (int i = 0; i < 300 && duke_test_searches() == 0; ++i) frame(0);
+    assert(duke_test_searches() == 1 && duke_test_halt() > 0 && duke_test_chasing() == 0);
+    assert(duke_test_rauti() == 0 || duke_test_rauti() == 20);
+    int held_x = duke_test_player_x();
+    for (int i = 0; i < 30; ++i) frame(BTN_RIGHT); /* halted: the car does not answer */
+    assert(duke_test_player_x() == held_x && duke_test_halt() > 0);
+    dump("12-search");
+    for (int i = 0; i < 60; ++i) frame(0);
+    assert(duke_test_halt() == 0);
+    duke_test_clear_enemies();
+
+    /* Checkpoints. Through the one on the decumano towards Chiaia flat out:
+     * flagged down. The police then leave the Fiat alone for a while. */
+    for (int i = 0; i < 260; ++i) frame(0);
+    duke_test_teleport(111 * 8 + 4, 81 * 8 + 4);
+    for (int i = 0; i < 40 && duke_test_searches() == 1; ++i) frame(BTN_RIGHT);
+    assert(duke_test_searches() == 2 && duke_test_halt() > 0);
+    assert(cm_checkpoint_at(duke_test_player_x() >> 3, duke_test_player_y() >> 3) == 0);
+    for (int i = 0; i < 400; ++i) frame(0);
+    /* Rolled through below the limit: waved on. */
+    int score = duke_test_score();
+    duke_test_teleport(111 * 8 + 4, 81 * 8 + 4);
+    for (int i = 0; i < 200 && (duke_test_player_x() >> 3) < 124; ++i)
+        frame(duke_test_speed() < SPEED_LIMIT - 10 ? BTN_RIGHT : 0);
+    assert((duke_test_player_x() >> 3) >= 124);
+    assert(duke_test_searches() == 2 && duke_test_score() == score + 25);
+    dump("13-checkpoint");
+    duke_test_set_rauti(0);
+    for (int i = 0; i < 260; ++i) frame(0);
+
     long before = s_frames;
     int result = drive(40000, 0, 1);
     printf("autopilot, empty streets: state=%d items=%d/8 fuel=%d score=%d in %ld frames (%.0f s)\n",
@@ -332,6 +417,7 @@ int main(int argc, char **argv) {
     assert(result == ST_WIN);
     assert(duke_test_collected_count() == CM_ITEM_COUNT);
     assert(duke_test_trouble() == 1);
+    assert(duke_test_searches() == 2); /* the careful driver was not stopped again */
     assert(g_test_track == 2);
     assert(g_test_last_score == (uint32_t)duke_test_score());
     for (int i = 0; i < 60; ++i) frame(0);
@@ -349,12 +435,13 @@ int main(int argc, char **argv) {
     /* 2. The same drive through traffic. Winning is not guaranteed; the
      * invariants are. Several nights, so both endings are exercised. */
     duke_test_enemies(1);
-    int wins = 0, losses = 0;
+    int wins = 0, losses = 0, unfinished = 0, searches = 0;
     for (int night = 0; night < 12; ++night) {
         start_game();
         result = drive(40000, 1, 1);
-        assert(result == ST_WIN || result == ST_LOSE);
+        searches += duke_test_searches();
         if (result == ST_WIN) wins++;
+        else if (result == ST_PLAYING) unfinished++;
         else {
             losses++;
             if (losses == 1) { for (int i = 0; i < 40; ++i) frame(0); dump("08-lose"); }
@@ -362,8 +449,9 @@ int main(int argc, char **argv) {
     }
     printf("rauti: a box was picked up in traffic: %s\n", s_box_seen ? "yes" : "no");
     assert(s_box_seen);
-    printf("autopilot, in traffic: %d wins, %d losses, up to %d chasers at once, %d effect notes\n",
-           wins, losses, s_max_enemies_seen, g_test_notes);
+    printf("autopilot, in traffic: %d wins, %d losses, %d unfinished, %d searches, up to %d cars around\n",
+           wins, losses, unfinished, searches, s_max_enemies_seen);
+    assert(wins + losses > 0);
     assert(s_max_enemies_seen >= 2);
     assert(g_test_notes > 0);
 

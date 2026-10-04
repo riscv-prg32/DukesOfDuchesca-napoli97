@@ -1,5 +1,31 @@
 # Changelog
 
+## 2.2.0 — 2026-10-04 — the Rock Garden, and a police force you have to drive past
+
+### New
+
+- **The start is the Rock Garden**, the rock club of Via San Giovanni
+  Maggiore Pignatelli 26, placed in the vicoli beside the Rettifilo and drawn
+  under its neon sign. La Duchesca is named on the map, between it and the
+  station. Twenty-four points of interest in all.
+- **Checkpoints.** Seven posti di blocco. Crossed over the limit, the Fiat is
+  halted and searched; rolled through, it is waved on.
+- **Searches.** Halted for a few seconds; the rauti are confiscated three
+  times out of four and each party item one time in four (two at most).
+  Confiscated items go back to where they were found.
+- A speedometer under the fuel gauge, red above the limit; police and
+  checkpoints on the radar.
+
+### Changed
+
+- **The police are on your side until you give them a reason.** Patrol cars
+  cruise instead of hunting the Fiat, there are more of them (up to three
+  around, from the first minute), and scooters run from a patrol nearby.
+  Speeding in sight of a patrol, or lighting a rauto within its earshot,
+  starts a chase that ends in a search. The police no longer damage the car
+  and can no longer end the game.
+- A rauto no longer removes police cars.
+
 ## 2.1.0 — 2026-10-04 — zoom, rauti, the monuments of Napoli, easier steering
 
 ### New

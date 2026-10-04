@@ -75,7 +75,7 @@ typedef struct {
 enum {
     CM_POI_PLACE = 0, CM_POI_CASTLE, CM_POI_STAR_FORT, CM_POI_SEA_CASTLE, CM_POI_PALACE,
     CM_POI_BASILICA, CM_POI_CATHEDRAL, CM_POI_MUSEUM, CM_POI_STATION, CM_POI_GALLERIA,
-    CM_POI_TOWERS, CM_POI_FAIR,
+    CM_POI_TOWERS, CM_POI_FAIR, CM_POI_CLUB,
 };
 enum {
     CM_AT_PLEBISCITO = 0, CM_AT_SAN_FRANCESCO, CM_AT_PALAZZO_REALE, CM_AT_MASCHIO_ANGIOINO,
@@ -83,6 +83,7 @@ enum {
     CM_AT_CAPODIMONTE, CM_AT_VILLA_DORIA, CM_AT_STAZIONE, CM_AT_GALLERIA,
     CM_AT_CENTRO_DIREZIONALE, CM_AT_MOSTRA, CM_AT_CAPODICHINO, CM_AT_VILLA_COMUNALE,
     CM_AT_BEVERELLO, CM_AT_DANTE, CM_AT_VANVITELLI, CM_AT_MERCATO, CM_AT_MARTIRI,
+    CM_AT_ROCK_GARDEN, CM_AT_DUCHESCA,
     CM_POI_COUNT
 };
 
@@ -105,13 +106,22 @@ int cm_poi_near(int tx, int ty);
 extern const cm_zone_t cm_zones[];
 extern const int cm_zone_count;
 
-/* The player's starting piazza (Plebiscito, by Santa Lucia) and the party
- * destination (a villa on the Posillipo promontory, across the bay). */
+/* Where the night starts (outside the Rock Garden, the rock club of Via San
+ * Giovanni Maggiore Pignatelli, in the university quarter by the Rettifilo)
+ * and the party destination (Villa Doria d'Angri at Posillipo, across the
+ * bay). */
 extern const cm_point_t cm_start_point;
 extern const cm_point_t cm_party_point;
 
 /* Gas stations: the centre tile of each 3x3 forecourt. */
 extern const cm_point_t cm_gas_points[CM_GAS_COUNT];
+
+/* Police checkpoints (posti di blocco): a stretch of street, in tiles. */
+#define CM_CHECKPOINT_COUNT 7
+extern const cm_poi_t cm_checkpoints[CM_CHECKPOINT_COUNT];
+
+/* The checkpoint a tile is in, or -1. */
+int cm_checkpoint_at(int tx, int ty);
 
 /* Boxes of rauti (bangers), one per point. */
 extern const cm_point_t cm_rauti_points[CM_RAUTI_COUNT];
