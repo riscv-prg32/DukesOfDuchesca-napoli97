@@ -1,6 +1,5 @@
-dist/
 build/
 __pycache__/
 *.pyc
 .DS_Store
-assets/theme_preview.wav
+release-artifacts/qemu/audio.wav

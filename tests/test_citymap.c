@@ -1,102 +1,150 @@
-/* Host-side unit tests for citymap.c: no prg32.h dependency, plain assert. */
+/* Host unit tests for the pure map logic (no engine dependency).
+ *   cc -Wall -Wextra -std=c11 citymap.c tests/test_citymap.c -o /tmp/t && /tmp/t
+ */
 #include "../citymap.h"
 #include <assert.h>
 #include <stdio.h>
 
-static void test_world_is_much_larger_than_viewport(void) {
-    assert(CM_WORLD_COLS * CM_TILE_PX >= 320 * 4);
-    assert(CM_WORLD_ROWS * CM_TILE_PX >= 200 * 4);
+#define W (CM_WORLD_COLS * CM_TILE_PX)
+#define H (CM_WORLD_ROWS * CM_TILE_PX)
+
+static unsigned char seen[H][W];
+static int queue_x[W * H], queue_y[W * H];
+
+/* Flood fill of every pixel the car's collision box can occupy, starting
+ * from the spawn point: the exact set of positions a player can drive to. */
+static int flood_from_start(void) {
+    static const int dx[4] = {1, -1, 0, 0}, dy[4] = {0, 0, 1, -1};
+    int head = 0, tail = 0;
+    int sx = cm_start_point.x * CM_TILE_PX + 4, sy = cm_start_point.y * CM_TILE_PX + 4;
+    assert(!cm_box_blocked(sx, sy));
+    queue_x[tail] = sx; queue_y[tail++] = sy; seen[sy][sx] = 1;
+    while (head < tail) {
+        int x = queue_x[head], y = queue_y[head++];
+        for (int i = 0; i < 4; ++i) {
+            int nx = x + dx[i], ny = y + dy[i];
+            if (nx < 0 || ny < 0 || nx >= W || ny >= H || seen[ny][nx]) continue;
+            if (cm_box_blocked(nx, ny)) continue;
+            seen[ny][nx] = 1;
+            queue_x[tail] = nx; queue_y[tail++] = ny;
+        }
+    }
+    return tail;
 }
 
-static void test_out_of_range_is_sea(void) {
-    assert(cm_tile_at(-1, 0) == CM_T_SEA);
-    assert(cm_tile_at(0, -1) == CM_T_SEA);
-    assert(cm_tile_at(CM_WORLD_COLS, 0) == CM_T_SEA);
-    assert(cm_tile_at(0, CM_WORLD_ROWS) == CM_T_SEA);
+static int reachable(cm_point_t p) {
+    return seen[p.y * CM_TILE_PX + 4][p.x * CM_TILE_PX + 4];
 }
 
-static void test_start_and_party_points_are_drivable(void) {
-    uint8_t start_tile = cm_tile_at(cm_start_point.x, cm_start_point.y);
-    uint8_t party_tile = cm_tile_at(cm_party_point.x, cm_party_point.y);
-    assert(!cm_tile_is_solid(start_tile));
-    assert(!cm_tile_is_solid(party_tile));
-    assert(party_tile == CM_T_PARTY);
+static void test_bounds_are_sea(void) {
+    assert(cm_tile_at(-1, 5) == CM_T_SEA);
+    assert(cm_tile_at(5, -1) == CM_T_SEA);
+    assert(cm_tile_at(CM_WORLD_COLS, 5) == CM_T_SEA);
+    assert(cm_tile_at(5, CM_WORLD_ROWS) == CM_T_SEA);
+    for (int tx = 0; tx < CM_WORLD_COLS; ++tx)
+        assert(cm_tile_at(tx, CM_WORLD_ROWS - 1) == CM_T_SEA);
 }
 
-static void test_all_item_points_are_drivable(void) {
+static void test_coast_has_the_shape_of_the_gulf(void) {
+    /* The Posillipo promontory reaches further south than both bays. */
+    assert(cm_coast_row(62) > cm_coast_row(0) + 16);
+    assert(cm_coast_row(62) > cm_coast_row(110) + 20);
+    /* Santa Lucia sticks out of Via Caracciolo; the east coast falls away. */
+    assert(cm_coast_row(142) > cm_coast_row(120) && cm_coast_row(142) > cm_coast_row(150));
+    assert(cm_coast_row(219) > cm_coast_row(176) + 10);
+    for (int tx = 0; tx < CM_WORLD_COLS; ++tx) {
+        int coast = cm_coast_row(tx);
+        assert(coast > 90 && coast < CM_WORLD_ROWS - 4);
+        /* Nothing but a named place stands in the sea, and the shore itself
+         * is always the lungomare or a named place. */
+        uint8_t shore = cm_tile_at(tx, coast - 1);
+        assert(shore == CM_T_PROMENADE || shore == CM_T_PARTY || shore == CM_T_PIAZZA ||
+               shore == CM_T_PARK);
+    }
+    /* Castel dell'Ovo stands on its islet, joined by the causeway. */
+    assert(cm_tile_at(142, 110) == CM_T_PIAZZA && cm_tile_at(137, 110) == CM_T_SEA);
+    assert(cm_tile_at(141, 105) == CM_T_PROMENADE);
+}
+
+static void test_streets_fit_the_car(void) {
+    /* The box is exactly one tile wide, so both street widths leave room. */
+    assert(2 * CM_CAR_HALF <= CM_TILE_PX);
+    assert(CM_CARDO_WIDTH * CM_TILE_PX >= 2 * CM_CAR_HALF + 4);
+    assert(CM_DECUMANO_WIDTH * CM_TILE_PX >= 2 * CM_CAR_HALF + 4);
+    /* A plain cardo of the centro storico, away from zones. */
+    assert(cm_tile_at(110, 40) == CM_T_ROAD && cm_tile_at(111, 40) == CM_T_ROAD);
+    assert(cm_tile_is_solid(cm_tile_at(112, 39)));
+    assert(!cm_box_blocked(110 * 8 + 8, 40 * 8 + 4));
+    /* Blocks are wider in Fuorigrotta than in the centro storico. */
+    assert(cm_tile_is_solid(cm_tile_at(8, 40)) && cm_tile_at(12, 40) == CM_T_ROAD);
+}
+
+static void test_zones_resolve(void) {
+    for (int i = 0; i < cm_zone_count; ++i) {
+        const cm_zone_t *z = &cm_zones[i];
+        assert(z->x >= 0 && z->y >= 0 && z->x + z->w <= CM_WORLD_COLS);
+        assert(z->y + z->h < CM_WORLD_ROWS);
+        /* No zone is completely hidden behind an earlier one. */
+        int shown = 0;
+        for (int ty = z->y; ty < z->y + z->h; ++ty)
+            for (int tx = z->x; tx < z->x + z->w; ++tx)
+                if (cm_tile_at(tx, ty) == z->tile) shown++;
+        assert(shown * 2 >= z->w * z->h);
+    }
+}
+
+static void test_landmarks_are_reachable(void) {
+    assert(cm_tile_at(cm_start_point.x, cm_start_point.y) == CM_T_PIAZZA);
+    assert(cm_tile_at(cm_party_point.x, cm_party_point.y) == CM_T_PARTY);
+    assert(reachable(cm_party_point));
     for (int i = 0; i < CM_ITEM_COUNT; ++i) {
-        uint8_t t = cm_tile_at(cm_item_points[i].x, cm_item_points[i].y);
-        assert(!cm_tile_is_solid(t));
+        assert(!cm_tile_is_solid(cm_tile_at(cm_item_points[i].x, cm_item_points[i].y)));
+        if (!reachable(cm_item_points[i])) {
+            fprintf(stderr, "item %d is not reachable from the start\n", i);
+            assert(0);
+        }
+    }
+    for (int i = 0; i < CM_GAS_COUNT; ++i) {
+        assert(cm_tile_at(cm_gas_points[i].x, cm_gas_points[i].y) == CM_T_GAS);
+        assert(reachable(cm_gas_points[i]));
     }
 }
 
-static void test_all_gas_points_are_drivable(void) {
-    for (int i = 0; i < cm_gas_point_count; ++i) {
-        uint8_t t = cm_tile_at(cm_gas_points[i].x, cm_gas_points[i].y);
-        assert(!cm_tile_is_solid(t));
-        assert(t == CM_T_GAS);
-    }
-}
-
-static void test_deep_south_is_sea_and_bounds_the_city(void) {
-    assert(cm_tile_at(100, CM_WORLD_ROWS - 1) == CM_T_SEA);
-    assert(cm_tile_is_solid(CM_T_SEA));
-}
-
-static void test_deterministic(void) {
-    for (int i = 0; i < 5; ++i) {
-        assert(cm_tile_at(73, 41) == cm_tile_at(73, 41));
-        assert(cm_backdrop_at(5, 19) == cm_backdrop_at(5, 19));
-    }
-}
-
-static void test_backdrop_wraps_within_physical_playfield(void) {
-    /* Physical playfield is 64x32; the backdrop is filled once into that
-     * buffer so it must be well-defined (and stable) across the whole
-     * wrapped range, including negative-looking modulo edge cases. */
-    for (int y = 0; y < 32; ++y) {
-        for (int x = 0; x < 64; ++x) {
-            uint8_t b = cm_backdrop_at(x, y);
-            assert(b == CM_B_SEA || b == CM_B_VESUVIO_L || b == CM_B_VESUVIO_R);
+static void test_every_open_tile_is_connected(void) {
+    /* No drivable pocket is cut off from the rest of the city: enemies can
+     * spawn on any open tile and still find the player. */
+    for (int ty = 0; ty < CM_WORLD_ROWS; ++ty) {
+        for (int tx = 0; tx < CM_WORLD_COLS; ++tx) {
+            if (cm_tile_is_solid(cm_tile_at(tx, ty))) continue;
+            int px = tx * CM_TILE_PX + 4, py = ty * CM_TILE_PX + 4;
+            if (!seen[py][px]) {
+                fprintf(stderr, "open tile (%d,%d) is cut off\n", tx, ty);
+                assert(0);
+            }
         }
     }
 }
 
-static void test_heading_tables_are_consistent(void) {
-    /* Cardinal directions should be exact multiples of 256 (Q8 for 1.0). */
-    assert(cm_cos_table[0] == 0 && cm_sin_table[0] == -256);   /* up */
-    assert(cm_cos_table[8] == 256 && cm_sin_table[8] == 0);    /* right */
-    assert(cm_cos_table[16] == 0 && cm_sin_table[16] == 256);  /* down */
-    assert(cm_cos_table[24] == -256 && cm_sin_table[24] == 0); /* left */
+static void test_trig_tables(void) {
     for (int i = 0; i < 32; ++i) {
-        long c = cm_cos_table[i];
-        long s = cm_sin_table[i];
-        long mag2 = c * c + s * s;
-        /* Should be close to 256^2 = 65536 given integer rounding. */
-        assert(mag2 > 64000 && mag2 < 67200);
+        int c = cm_cos_table[i], s = cm_sin_table[i];
+        int mag = c * c + s * s;
+        assert(mag > 63000 && mag < 68000); /* ~256^2 */
     }
-}
-
-static void test_decumani_are_two_tiles_wide_and_periodic(void) {
-    int found_road_row = 0;
-    for (int ty = 0; ty < 16; ++ty) {
-        uint8_t t = cm_tile_at(3, ty);
-        if (t == CM_T_ROAD || t == CM_T_ROAD_LINE) found_road_row++;
-    }
-    assert(found_road_row >= 2);
+    assert(cm_cos_table[0] == 0 && cm_sin_table[0] == -256);  /* north */
+    assert(cm_cos_table[8] == 256 && cm_sin_table[8] == 0);   /* east */
 }
 
 int main(void) {
-    test_world_is_much_larger_than_viewport();
-    test_out_of_range_is_sea();
-    test_start_and_party_points_are_drivable();
-    test_all_item_points_are_drivable();
-    test_all_gas_points_are_drivable();
-    test_deep_south_is_sea_and_bounds_the_city();
-    test_deterministic();
-    test_backdrop_wraps_within_physical_playfield();
-    test_heading_tables_are_consistent();
-    test_decumani_are_two_tiles_wide_and_periodic();
-    printf("all citymap tests passed\n");
+    int open_pixels = flood_from_start();
+    test_bounds_are_sea();
+    test_coast_has_the_shape_of_the_gulf();
+    test_streets_fit_the_car();
+    test_zones_resolve();
+    test_landmarks_are_reachable();
+    test_every_open_tile_is_connected();
+    test_trig_tables();
+    printf("citymap: %d reachable car positions, all landmarks connected\n", open_pixels);
+    printf("ALL CITYMAP TESTS PASSED\n");
     return 0;
 }

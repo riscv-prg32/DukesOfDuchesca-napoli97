@@ -1,228 +1,278 @@
 #!/usr/bin/env python3
-"""Generate assets_generated.h for DukesOfDuchesca-napoli97.
+"""Generate assets.h for DukesOfDuchesca-napoli97.
 
-This is a dev-time tool (like cartridges/poing/scripts/render_assets.py in
-the upstream PRG32 repo): it rasterizes small vehicle silhouettes at 8
-headings and one landmark image, quantizes them to fixed palettes, and
-emits packed prg32_indexed_sprite_t-compatible C arrays. Its output
-(assets_generated.h) is committed to the repo; the cartridge build does not
-re-run this script.
+A dev-time tool: it rasterises the three vehicles at 8 headings and the party
+villa, and emits packed prg32_indexed_sprite_t-compatible C arrays plus the
+1-bpp item icons and compass arrows. Its output (assets.h) is committed; the
+cartridge build does not re-run this script.
 
-Packing matches components/prg32/prg32_sprite.c's non-planar decoder
-exactly: pixels are row-major, two 4-bit (or one 8-bit) palette indices per
-byte, packed continuously across the whole width*height frame with no
-per-row padding, most significant nibble first.
+Vehicles are drawn 4x oversized with hard edges and reduced by majority vote,
+which keeps small details (tyres, lights, the roof stripes) crisp at 20x20.
+
+Packing matches components/prg32/prg32_sprite.c's non-planar decoder: pixels
+are row-major, packed continuously across the whole frame with no per-row
+padding, most significant bits first.
 """
 import math
+from collections import Counter
 from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-OUT = Path(__file__).resolve().parents[1] / "assets_generated.h"
+OUT = Path(__file__).resolve().parents[1] / "assets.h"
 
 HEADINGS = 8  # N, NE, E, SE, S, SW, W, NW (index 0 = up, clockwise)
+CANVAS = 20
+SS = 4        # supersampling factor
+
+# Index 0 is transparent in every palette. The key colour only has to be
+# different from the other entries; it is never shown.
+KEY = (255, 0, 255)
+
+CAR_PALETTE = [
+    KEY,
+    (250, 250, 245),  # 1 white body
+    (38, 40, 52),     # 2 tyres / glass
+    (200, 28, 36),    # 3 red go-faster stripes / tail lights
+    (255, 216, 64),   # 4 headlights
+    (188, 192, 200),  # 5 body shade
+]
+SCOOTER_PALETTE = [
+    KEY,
+    (214, 56, 40),    # 1 scooter body
+    (30, 30, 36),     # 2 wheels / handlebar
+    (248, 208, 80),   # 3 helmet / headlight
+    (60, 96, 176),    # 4 denim jacket
+]
+POLICE_PALETTE = [
+    KEY,
+    (240, 242, 246),  # 1 white body
+    (28, 64, 160),    # 2 blue livery
+    (232, 32, 32),    # 3 light bar, left lamp  (swapped with 4 by the game)
+    (40, 112, 248),   # 4 light bar, right lamp
+    (36, 38, 50),     # 5 tyres / glass
+    (255, 224, 96),   # 6 headlights
+]
 
 
-def rotated_polygon(points, angle_deg, cx, cy):
-    a = math.radians(angle_deg)
+def rot(points, angle, scale=SS):
+    a = math.radians(angle)
     ca, sa = math.cos(a), math.sin(a)
+    c = CANVAS * scale / 2.0
+    return [(c + (x * ca - y * sa) * scale, c + (x * sa + y * ca) * scale) for x, y in points]
+
+
+def rect(x0, y0, x1, y1):
+    return [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+
+
+def disc(cx, cy, r, n=12):
+    return [(cx + r * math.cos(2 * math.pi * i / n), cy + r * math.sin(2 * math.pi * i / n)) for i in range(n)]
+
+
+def car_shapes():
+    yield 2, rect(-5.3, -5.6, -3.8, -2.6)
+    yield 2, rect(3.8, -5.6, 5.3, -2.6)
+    yield 2, rect(-5.3, 2.6, -3.8, 5.6)
+    yield 2, rect(3.8, 2.6, 5.3, 5.6)
+    yield 1, [(-3, -7.2), (3, -7.2), (4.5, -5.4), (4.5, 5.6), (3.4, 7.2), (-3.4, 7.2), (-4.5, 5.6), (-4.5, -5.4)]
+    yield 5, rect(3.3, -4.6, 4.5, 5.2)
+    yield 3, rect(-1.7, -7.2, -0.5, 6.6)
+    yield 3, rect(0.5, -7.2, 1.7, 6.6)
+    yield 2, [(-3.1, -3.6), (3.1, -3.6), (3.5, -1.5), (-3.5, -1.5)]
+    yield 2, [(-3.1, 3.8), (3.1, 3.8), (2.7, 5.3), (-2.7, 5.3)]
+    yield 4, disc(-2.9, -6.2, 1.0)
+    yield 4, disc(2.9, -6.2, 1.0)
+    yield 3, rect(-4.0, 6.2, -2.4, 7.2)
+    yield 3, rect(2.4, 6.2, 4.0, 7.2)
+
+
+def scooter_shapes():
+    yield 2, rect(-1.1, -7.4, 1.1, -4.4)
+    yield 2, rect(-1.1, 4.4, 1.1, 7.4)
+    yield 1, [(-2.0, -4.8), (2.0, -4.8), (2.5, 4.8), (-2.5, 4.8)]
+    yield 2, rect(-3.8, -4.4, 3.8, -3.3)
+    yield 3, disc(0, -5.3, 0.9)
+    yield 4, disc(0, 1.0, 2.9)
+    yield 3, disc(0, -0.8, 1.9)
+
+
+def police_shapes():
+    yield 5, rect(-5.4, -5.8, -3.9, -2.8)
+    yield 5, rect(3.9, -5.8, 5.4, -2.8)
+    yield 5, rect(-5.4, 2.8, -3.9, 5.8)
+    yield 5, rect(3.9, 2.8, 5.4, 5.8)
+    yield 1, [(-3.4, -7.6), (3.4, -7.6), (4.6, -6.0), (4.6, 6.4), (3.6, 7.6), (-3.6, 7.6), (-4.6, 6.4), (-4.6, -6.0)]
+    yield 2, rect(-4.6, -4.4, -3.2, 5.4)
+    yield 2, rect(3.2, -4.4, 4.6, 5.4)
+    yield 2, rect(-4.6, -6.0, 4.6, -4.8)
+    yield 5, [(-3.0, -3.8), (3.0, -3.8), (3.3, -1.8), (-3.3, -1.8)]
+    yield 5, [(-3.0, 4.0), (3.0, 4.0), (2.7, 5.6), (-2.7, 5.6)]
+    yield 3, rect(-3.0, -0.6, 0.0, 1.6)
+    yield 4, rect(0.0, -0.6, 3.0, 1.6)
+    yield 6, disc(-3.0, -6.8, 0.9)
+    yield 6, disc(3.0, -6.8, 0.9)
+
+
+def render(shapes, angle):
+    """Return CANVAS*CANVAS palette indices for one heading."""
+    big = Image.new("P", (CANVAS * SS, CANVAS * SS), 0)
+    d = ImageDraw.Draw(big)
+    for index, poly in shapes():
+        d.polygon(rot(poly, angle), fill=index)
+    px = big.load()
     out = []
-    for x, y in points:
-        rx = x * ca - y * sa
-        ry = x * sa + y * ca
-        out.append((cx + rx, cy + ry))
+    for y in range(CANVAS):
+        for x in range(CANVAS):
+            votes = Counter(px[x * SS + i, y * SS + j] for i in range(SS) for j in range(SS))
+            # A cell is drawn when at least half of it is covered.
+            solid = [(n, i) for i, n in votes.items() if i != 0]
+            if sum(n for n, _ in solid) * 2 < SS * SS:
+                out.append(0)
+            else:
+                out.append(max(solid)[1])
     return out
 
 
-def quantize_to_palette(im, palette_rgb):
-    """Map each pixel to the nearest palette index (small palettes only)."""
-    px = im.load()
-    w, h = im.size
-    indices = [0] * (w * h)
-    cache = {}
-    for y in range(h):
-        for x in range(w):
-            c = px[x, y]
-            idx = cache.get(c)
-            if idx is None:
-                best, best_d = 0, None
-                for i, pc in enumerate(palette_rgb):
-                    d = sum((a - b) * (a - b) for a, b in zip(c, pc))
-                    if best_d is None or d < best_d:
-                        best, best_d = i, d
-                idx = best
-                cache[c] = idx
-            indices[y * w + x] = idx
-    return indices
-
-
-def pack_4bpp(indices):
-    out = bytearray()
-    it = iter(indices)
-    for hi in it:
-        lo = next(it, 0)
-        out.append(((hi & 0xF) << 4) | (lo & 0xF))
+def pack(indices, bpp):
+    out, acc, bits = bytearray(), 0, 0
+    for i in indices:
+        acc = (acc << bpp) | i
+        bits += bpp
+        if bits == 8:
+            out.append(acc)
+            acc = bits = 0
+    if bits:
+        out.append(acc << (8 - bits))
     return bytes(out)
 
 
-def pack_8bpp(indices):
-    return bytes(i & 0xFF for i in indices)
+def rgb565(c):
+    r, g, b = c
+    return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
 
 
-def emit_array(lines, c_type, name, data):
-    lines.append(f"static const {c_type} {name}[{len(data)}] = {{")
-    row = []
-    for i, v in enumerate(data):
-        row.append((f"0x{v:02x}" if c_type == "uint8_t" else f"0x{v:04x}") + ",")
-        if len(row) == 16:
-            lines.append("    " + " ".join(row))
-            row = []
-    if row:
-        lines.append("    " + " ".join(row))
+def emit_icons(lines, name, icons):
+    lines.append(f"static const uint8_t {name}[{len(icons)}][8] = {{")
+    for rows in icons:
+        lines.append("    {" + ", ".join("0x%02x" % b for b in rows) + "},")
     lines.append("};")
 
 
-CAR_PALETTE = [
-    (0, 0, 0),        # 0 transparent (key)
-    (250, 250, 245),  # 1 white pimped body
-    (40, 40, 46),      # 2 tyres / window glass dark
-    (170, 20, 30),     # 3 red go-fast stripe / tail light
-    (255, 214, 60),    # 4 headlight / chrome trim
-]
-
-SCOOTER_PALETTE = [
-    (0, 0, 0),        # 0 transparent
-    (210, 60, 40),     # 1 scooter body (gang red)
-    (30, 30, 30),      # 2 wheels / rider jacket
-    (245, 210, 90),    # 3 helmet
-]
-
-POLICE_PALETTE = [
-    (0, 0, 0),        # 0 transparent
-    (240, 240, 240),  # 1 white body
-    (25, 60, 150),     # 2 blue livery
-    (210, 30, 30),     # 3 light bar red
-    (30, 90, 220),     # 4 light bar blue
-]
-
-CANVAS = 20
-CX = CY = CANVAS / 2.0
+def emit(lines, c_type, name, data):
+    lines.append(f"static const {c_type} {name}[{len(data)}] = {{")
+    width = 16 if c_type == "uint8_t" else 8
+    fmt = "0x%02x," if c_type == "uint8_t" else "0x%04x,"
+    for i in range(0, len(data), width):
+        lines.append("    " + " ".join(fmt % v for v in data[i:i + width]))
+    lines.append("};")
 
 
-def draw_car(angle):
-    im = Image.new("RGB", (CANVAS, CANVAS), CAR_PALETTE[0])
-    d = ImageDraw.Draw(im)
-    body = [(-3.5, -7), (3.5, -7), (4.5, 6), (-4.5, 6)]
-    d.polygon(rotated_polygon(body, angle, CX, CY), fill=CAR_PALETTE[1])
-    roof = [(-2.5, -3), (2.5, -3), (2.5, 2), (-2.5, 2)]
-    d.polygon(rotated_polygon(roof, angle, CX, CY), fill=CAR_PALETTE[2])
-    stripe = [(-0.8, -7), (0.8, -7), (0.8, 6), (-0.8, 6)]
-    d.polygon(rotated_polygon(stripe, angle, CX, CY), fill=CAR_PALETTE[3])
-    for hx in (-3.2, 3.2):
-        head = [(hx - 0.7, -7.4), (hx + 0.7, -7.4), (hx + 0.7, -6), (hx - 0.7, -6)]
-        d.polygon(rotated_polygon(head, angle, CX, CY), fill=CAR_PALETTE[4])
-    return im
-
-
-def draw_scooter(angle):
-    im = Image.new("RGB", (CANVAS, CANVAS), SCOOTER_PALETTE[0])
-    d = ImageDraw.Draw(im)
-    body = [(-2, -6), (2, -6), (2.5, 5), (-2.5, 5)]
-    d.polygon(rotated_polygon(body, angle, CX, CY), fill=SCOOTER_PALETTE[1])
-    rider = [(-1.6, -3), (1.6, -3), (1.6, 1.5), (-1.6, 1.5)]
-    d.polygon(rotated_polygon(rider, angle, CX, CY), fill=SCOOTER_PALETTE[2])
-    helmet = [(-1.4, -6.6), (1.4, -6.6), (1.4, -4.4), (-1.4, -4.4)]
-    d.polygon(rotated_polygon(helmet, angle, CX, CY), fill=SCOOTER_PALETTE[3])
-    return im
-
-
-def draw_police(angle):
-    im = Image.new("RGB", (CANVAS, CANVAS), POLICE_PALETTE[0])
-    d = ImageDraw.Draw(im)
-    body = [(-3.8, -7), (3.8, -7), (4.6, 6), (-4.6, 6)]
-    d.polygon(rotated_polygon(body, angle, CX, CY), fill=POLICE_PALETTE[1])
-    livery = [(-4.6, -1), (4.6, -1), (4.6, 1.4), (-4.6, 1.4)]
-    d.polygon(rotated_polygon(livery, angle, CX, CY), fill=POLICE_PALETTE[2])
-    bar_l = [(-1.6, -7.6), (0, -7.6), (0, -6.2), (-1.6, -6.2)]
-    bar_r = [(0, -7.6), (1.6, -7.6), (1.6, -6.2), (0, -6.2)]
-    d.polygon(rotated_polygon(bar_l, angle, CX, CY), fill=POLICE_PALETTE[3])
-    d.polygon(rotated_polygon(bar_r, angle, CX, CY), fill=POLICE_PALETTE[4])
-    return im
-
-
-def build_frames(draw_fn, palette, symbol, bpp, lines):
-    all_indices = []
+def vehicle(lines, name, shapes, palette):
+    indices = []
     for h in range(HEADINGS):
-        angle = h * (360.0 / HEADINGS)
-        im = draw_fn(angle)
-        idx = quantize_to_palette(im, palette)
-        all_indices.extend(idx)
-    packed = pack_4bpp(all_indices) if bpp == 4 else pack_8bpp(all_indices)
-    emit_array(lines, "uint8_t", f"{symbol}_pixels", list(packed))
-    pal16 = [((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3) for r, g, b in palette]
-    emit_array(lines, "uint16_t", f"{symbol}_palette", pal16)
-    lines.append(f"#define {symbol.upper()}_WIDTH {CANVAS}")
-    lines.append(f"#define {symbol.upper()}_HEIGHT {CANVAS}")
-    lines.append(f"#define {symbol.upper()}_FRAMES {HEADINGS}")
-    lines.append(f"#define {symbol.upper()}_PALETTE_COUNT {len(palette)}")
-    lines.append(f"#define {symbol.upper()}_BPP {bpp}")
+        indices.extend(render(shapes, h * 360.0 / HEADINGS))
+    emit(lines, "uint8_t", f"duke_{name}_pixels", pack(indices, 4))
+    pal = [0] + [rgb565(c) for c in palette[1:]]
+    emit(lines, "uint16_t", f"duke_{name}_palette", pal)
+    lines.append(f"#define DUKE_{name.upper()}_COLOURS {len(palette)}")
     lines.append("")
 
 
-VILLA_W, VILLA_H = 40, 28
+# ---- the party villa: a 48x32 facade standing in its garden ---------------
+VILLA_W, VILLA_H = 48, 32
 VILLA_PALETTE = [
-    (10, 10, 30),    # 0 night sky (also used as transparent key)
-    (235, 200, 140), # 1 villa wall (warm plaster)
-    (150, 60, 50),   # 2 roof tiles (terracotta)
-    (255, 225, 90),  # 3 lit windows / string lights
-    (60, 150, 70),   # 4 garden greenery
-    (230, 60, 140),  # 5 party pink glow
-    (250, 250, 250), # 6 gate columns
-    (90, 60, 40),    # 7 door / shadow
+    KEY,
+    (236, 204, 148),  # 1 plaster wall
+    (176, 72, 52),    # 2 terracotta roof
+    (255, 228, 104),  # 3 lit windows
+    (56, 148, 72),    # 4 garden
+    (232, 64, 148),   # 5 party pink
+    (250, 250, 250),  # 6 columns
+    (96, 62, 44),     # 7 door
+    (24, 92, 48),     # 8 cypress
+    (200, 164, 112),  # 9 wall shade
+    (255, 64, 64),    # 10 string light A (cycled by the game)
+    (64, 255, 96),    # 11 string light B
+    (72, 136, 255),   # 12 string light C
+    (64, 176, 224),   # 13 pool
 ]
 
 
 def draw_villa():
-    im = Image.new("RGB", (VILLA_W, VILLA_H), VILLA_PALETTE[0])
+    im = Image.new("P", (VILLA_W, VILLA_H), 0)
     d = ImageDraw.Draw(im)
-    d.rectangle((2, 22, VILLA_W - 3, VILLA_H - 1), fill=VILLA_PALETTE[4])
-    d.rectangle((6, 8, VILLA_W - 7, 22), fill=VILLA_PALETTE[1])
-    d.polygon([(4, 8), (VILLA_W - 5, 8), (VILLA_W - 11, 2), (10, 2)],
-              fill=VILLA_PALETTE[2])
-    for wx in (10, 17, VILLA_W - 24, VILLA_W - 17):
-        d.rectangle((wx, 12, wx + 4, 17), fill=VILLA_PALETTE[3])
-    d.rectangle((VILLA_W // 2 - 3, 15, VILLA_W // 2 + 3, 22), fill=VILLA_PALETTE[7])
-    d.rectangle((7, 20, 9, 27), fill=VILLA_PALETTE[6])
-    d.rectangle((VILLA_W - 10, 20, VILLA_W - 8, 27), fill=VILLA_PALETTE[6])
-    for i in range(6):
-        x = 4 + i * 6
-        d.point((x, 4), fill=VILLA_PALETTE[5])
-        d.point((x + 2, 5), fill=VILLA_PALETTE[3])
-    return im
+    d.rectangle((0, 24, VILLA_W - 1, VILLA_H - 1), fill=4)
+    d.rectangle((30, 26, 44, 30), fill=13)
+    d.rectangle((8, 9, VILLA_W - 9, 25), fill=1)
+    d.rectangle((8, 22, VILLA_W - 9, 25), fill=9)
+    d.polygon([(5, 9), (VILLA_W - 6, 9), (VILLA_W - 13, 2), (12, 2)], fill=2)
+    for wx in (11, 18, VILLA_W - 23, VILLA_W - 16):
+        d.rectangle((wx, 12, wx + 4, 18), fill=3)
+    d.rectangle((VILLA_W // 2 - 3, 15, VILLA_W // 2 + 2, 25), fill=7)
+    d.rectangle((VILLA_W // 2 - 5, 13, VILLA_W // 2 + 4, 14), fill=5)
+    for cx in (8, VILLA_W - 11):
+        d.rectangle((cx, 20, cx + 2, 29), fill=6)
+    for cx in (1, 4, VILLA_W - 6, VILLA_W - 3):
+        d.polygon([(cx, 24), (cx + 1, 11), (cx + 2, 24)], fill=8)
+    for i in range(14):        # the string of party lights along the eaves
+        d.point((5 + i * 3, 10 + (i & 1)), fill=10 + i % 3)
+    return list(im.tobytes())
+
+
+# ---- 8x8 one-bit icons: one byte per row, most significant bit leftmost ---
+ICONS = [
+    ("beer", [0x38, 0x7c, 0x7c, 0x7d, 0x7d, 0x7d, 0x7c, 0x7c], (255, 176, 0)),
+    ("wine", [0x18, 0x18, 0x3c, 0x7e, 0x7e, 0x7e, 0x7e, 0x3c], (176, 40, 160)),
+    ("sangria", [0xc3, 0x66, 0x3c, 0x18, 0x18, 0x3c, 0x7e, 0x00], (255, 80, 32)),
+    ("amplifier", [0xff, 0x81, 0xbd, 0xa5, 0xa5, 0xbd, 0x81, 0xff], (255, 255, 255)),
+    ("loudspeaker", [0x03, 0x0f, 0x3f, 0xff, 0xff, 0x3f, 0x0f, 0x03], (255, 216, 0)),
+    ("mixer", [0x66, 0x66, 0x00, 0xff, 0x18, 0x18, 0xff, 0x00], (0, 255, 255)),
+    ("disco lights", [0x3c, 0x42, 0xa5, 0x99, 0x99, 0xa5, 0x42, 0x3c], (255, 0, 255)),
+    ("nice girls", [0x66, 0xff, 0xff, 0x7e, 0x3c, 0x18, 0x00, 0x00], (255, 96, 152)),
+]
+GAS_ICON = [0x3c, 0x42, 0x5e, 0x42, 0x42, 0x42, 0x7e, 0x00]
+
+
+def arrow(angle):
+    big = Image.new("L", (8 * SS, 8 * SS), 0)
+    d = ImageDraw.Draw(big)
+    a = math.radians(angle)
+    ca, sa = math.cos(a), math.sin(a)
+    pts = [(0, -4), (3.4, 3), (0, 1.2), (-3.4, 3)]
+    d.polygon([((4 + x * ca - y * sa) * SS, (4 + x * sa + y * ca) * SS) for x, y in pts], fill=255)
+    px = big.resize((8, 8), Image.BOX).load()
+    return [sum((1 << (7 - x)) for x in range(8) if px[x, y] >= 128) for y in range(8)]
 
 
 def main():
     lines = [
         "/* AUTO-GENERATED by scripts/gen_assets.py -- do not hand-edit. */",
-        "#ifndef DUKES_ASSETS_GENERATED_H",
-        "#define DUKES_ASSETS_GENERATED_H",
+        "#ifndef DUKES_ASSETS_H",
+        "#define DUKES_ASSETS_H",
         "#include <stdint.h>",
         "",
+        f"#define DUKE_VEHICLE_SIZE {CANVAS}",
+        f"#define DUKE_VEHICLE_FRAMES {HEADINGS}",
+        "",
     ]
-    build_frames(draw_car, CAR_PALETTE, "duke_car", 4, lines)
-    build_frames(draw_scooter, SCOOTER_PALETTE, "duke_scooter", 4, lines)
-    build_frames(draw_police, POLICE_PALETTE, "duke_police", 4, lines)
+    vehicle(lines, "car", car_shapes, CAR_PALETTE)
+    vehicle(lines, "scooter", scooter_shapes, SCOOTER_PALETTE)
+    vehicle(lines, "police", police_shapes, POLICE_PALETTE)
 
-    villa_idx = quantize_to_palette(draw_villa(), VILLA_PALETTE)
-    emit_array(lines, "uint8_t", "duke_villa_pixels", list(pack_8bpp(villa_idx)))
-    pal16 = [((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3) for r, g, b in VILLA_PALETTE]
-    emit_array(lines, "uint16_t", "duke_villa_palette", pal16)
-    lines.append(f"#define DUKE_VILLA_WIDTH {VILLA_W}")
-    lines.append(f"#define DUKE_VILLA_HEIGHT {VILLA_H}")
-    lines.append(f"#define DUKE_VILLA_PALETTE_COUNT {len(VILLA_PALETTE)}")
-    lines.append("")
-    lines.append("#endif")
+    emit(lines, "uint8_t", "duke_villa_pixels", pack(draw_villa(), 4))
+    emit(lines, "uint16_t", "duke_villa_palette", [0] + [rgb565(c) for c in VILLA_PALETTE[1:]])
+    lines += [f"#define DUKE_VILLA_WIDTH {VILLA_W}", f"#define DUKE_VILLA_HEIGHT {VILLA_H}",
+              f"#define DUKE_VILLA_COLOURS {len(VILLA_PALETTE)}",
+              "#define DUKE_VILLA_LIGHT 10 /* first of three cycled string-light entries */", ""]
 
+    lines.append("/* 8x8 one-bit icons, one per party item, in item order. */")
+    emit_icons(lines, "duke_item_icons", [rows for _, rows, _ in ICONS])
+    emit(lines, "uint16_t", "duke_item_colours", [rgb565(c) for _, _, c in ICONS])
+    emit(lines, "uint8_t", "duke_gas_icon", GAS_ICON)
+    lines.append("/* Compass arrows for the 8 headings, N first, clockwise. */")
+    emit_icons(lines, "duke_arrow_icons", [arrow(h * 45) for h in range(8)])
+    lines += ["", "#endif"]
     OUT.write_text("\n".join(lines) + "\n")
     print(f"wrote {OUT} ({OUT.stat().st_size} bytes)")
 

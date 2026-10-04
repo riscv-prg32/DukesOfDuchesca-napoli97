@@ -1,25 +1,25 @@
 {
   "abi": "prg32-colophon-1.0",
-  "title": "DukesOfDuchesca-napoli97",
+  "title": "Dukes of Duchesca - Napoli '97",
   "subtitle": "Napoli, estate 1997",
-  "version": "1.0.0",
+  "version": "2.0.0",
+  "release_date": "2026-10-04",
   "developer": {"name": "PRG32 contributors"},
-  "authors": [],
+  "authors": ["PRG32 contributors"],
+  "license": "MIT",
+  "acknowledgements": [
+    "Freely inspired by the TV series 'The Dukes of Hazzard'",
+    "The city is a stylised Napoli drawn from memory of a street atlas, not a survey",
+    "Original soundtrack: a serenade, a tarantella, a 90s dance loop",
+    "Built for riscv-prg32/PRG32 main"
+  ],
+  "content_notice": "Unofficial homage, not affiliated with the rights holders of the series it nods to. Code, artwork, music and effects are original.",
   "controls": [
     {"input": "UP", "action": "Accelerate"},
     {"input": "DOWN", "action": "Brake / reverse"},
-    {"input": "LEFT/RIGHT", "action": "Steer"},
-    {"input": "A", "action": "Honk (scares off nearby scooters)"},
-    {"input": "START", "action": "Pause / confirm on menus"}
+    {"input": "LEFT / RIGHT", "action": "Steer"},
+    {"input": "A", "action": "Horn: scares off the scooters nearby"},
+    {"input": "START", "action": "Start, pause"}
   ],
-  "credits": [
-    "Freely inspired by the TV series 'The Dukes of Hazzard'",
-    "City layout is a stylised homage to Napoli's historic street grid",
-    "and Gulf-of-Naples coastline, not a survey of the real map",
-    "Original soundtrack: an 8-voice SID-like tarantella/90s theme,",
-    "not a transcription of any existing recording"
-  ],
-  "copyright": "Copyright 2026 PRG32 contributors",
-  "license": "MIT",
-  "third_party_assets": []
+  "start_prompt": "Press START to hit the road"
 }
