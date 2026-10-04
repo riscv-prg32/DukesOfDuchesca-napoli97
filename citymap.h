@@ -57,7 +57,8 @@
 #define CM_T_GAS 6
 #define CM_T_PARTY 7
 #define CM_T_PROMENADE 8
-#define CM_TILE_COUNT 9
+#define CM_T_LANDMARK 9 /* a monument: solid, drawn by the game in its own style */
+#define CM_TILE_COUNT 10
 
 typedef struct {
     int16_t x, y, w, h;
@@ -68,8 +69,37 @@ typedef struct {
     int16_t x, y;
 } cm_point_t;
 
+/* Points of interest: the real places of Napoli a visitor would look for.
+ * A place with a `style` other than CM_POI_PLACE is a building standing on
+ * its rectangle (solid); a CM_POI_PLACE is only a name for a zone below. */
+enum {
+    CM_POI_PLACE = 0, CM_POI_CASTLE, CM_POI_STAR_FORT, CM_POI_SEA_CASTLE, CM_POI_PALACE,
+    CM_POI_BASILICA, CM_POI_CATHEDRAL, CM_POI_MUSEUM, CM_POI_STATION, CM_POI_GALLERIA,
+    CM_POI_TOWERS, CM_POI_FAIR,
+};
+enum {
+    CM_AT_PLEBISCITO = 0, CM_AT_SAN_FRANCESCO, CM_AT_PALAZZO_REALE, CM_AT_MASCHIO_ANGIOINO,
+    CM_AT_CASTEL_DELL_OVO, CM_AT_SANT_ELMO, CM_AT_SAN_PAOLO, CM_AT_DUOMO, CM_AT_MUSEO,
+    CM_AT_CAPODIMONTE, CM_AT_VILLA_DORIA, CM_AT_STAZIONE, CM_AT_GALLERIA,
+    CM_AT_CENTRO_DIREZIONALE, CM_AT_MOSTRA, CM_AT_CAPODICHINO, CM_AT_VILLA_COMUNALE,
+    CM_AT_BEVERELLO, CM_AT_DANTE, CM_AT_VANVITELLI, CM_AT_MERCATO, CM_AT_MARTIRI,
+    CM_POI_COUNT
+};
+
+typedef struct {
+    int16_t x, y, w, h;
+    uint8_t style;
+} cm_poi_t;
+
+extern const cm_poi_t cm_pois[CM_POI_COUNT];
+
+/* The point of interest the tile is at or within three tiles of, or -1.
+ * Buildings are preferred to the places around them. */
+int cm_poi_near(int tx, int ty);
+
 #define CM_ITEM_COUNT 8
 #define CM_GAS_COUNT 8
+#define CM_RAUTI_COUNT 7
 
 /* Named piazzas and other rectangular overrides, all in tile coordinates. */
 extern const cm_zone_t cm_zones[];
@@ -82,6 +112,9 @@ extern const cm_point_t cm_party_point;
 
 /* Gas stations: the centre tile of each 3x3 forecourt. */
 extern const cm_point_t cm_gas_points[CM_GAS_COUNT];
+
+/* Boxes of rauti (bangers), one per point. */
+extern const cm_point_t cm_rauti_points[CM_RAUTI_COUNT];
 
 /* One spawn point per party item, scattered across the piazzas. */
 extern const cm_point_t cm_item_points[CM_ITEM_COUNT];

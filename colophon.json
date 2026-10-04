@@ -2,7 +2,7 @@
   "abi": "prg32-colophon-1.0",
   "title": "Dukes of Duchesca - Napoli '97",
   "subtitle": "Napoli, estate 1997",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "release_date": "2026-10-04",
   "developer": {"name": "PRG32 contributors"},
   "authors": ["PRG32 contributors"],
@@ -15,10 +15,9 @@
   ],
   "content_notice": "Unofficial homage, not affiliated with the rights holders of the series it nods to. Code, artwork, music and effects are original.",
   "controls": [
-    {"input": "UP", "action": "Accelerate"},
-    {"input": "DOWN", "action": "Brake / reverse"},
-    {"input": "LEFT / RIGHT", "action": "Steer"},
+    {"input": "D-Pad", "action": "Point where to go: the car turns that way and accelerates"},
     {"input": "A", "action": "Horn: scares off the scooters nearby"},
+    {"input": "B", "action": "Light a rauto: it goes off two seconds later, drive clear"},
     {"input": "START", "action": "Start, pause"}
   ],
   "start_prompt": "Press START to hit the road"

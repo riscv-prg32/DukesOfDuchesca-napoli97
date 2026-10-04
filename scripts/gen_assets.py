@@ -7,7 +7,9 @@ villa, and emits packed prg32_indexed_sprite_t-compatible C arrays plus the
 cartridge build does not re-run this script.
 
 Vehicles are drawn 4x oversized with hard edges and reduced by majority vote,
-which keeps small details (tyres, lights, the roof stripes) crisp at 20x20.
+which keeps small details (tyres, lights, the roof stripes) crisp at 40x40.
+Shapes are in world pixels; the game shows the world at ZOOM screen pixels
+per world pixel, so every sprite is rendered ZOOM times larger.
 
 Packing matches components/prg32/prg32_sprite.c's non-planar decoder: pixels
 are row-major, packed continuously across the whole frame with no per-row
@@ -22,7 +24,8 @@ from PIL import Image, ImageDraw
 OUT = Path(__file__).resolve().parents[1] / "assets.h"
 
 HEADINGS = 8  # N, NE, E, SE, S, SW, W, NW (index 0 = up, clockwise)
-CANVAS = 20
+ZOOM = 2      # the game shows the world at two screen pixels per world pixel
+CANVAS = 20 * ZOOM
 SS = 4        # supersampling factor
 
 # Index 0 is transparent in every palette. The key colour only has to be
@@ -55,10 +58,10 @@ POLICE_PALETTE = [
 ]
 
 
-def rot(points, angle, scale=SS):
+def rot(points, angle, scale=SS * ZOOM):
     a = math.radians(angle)
     ca, sa = math.cos(a), math.sin(a)
-    c = CANVAS * scale / 2.0
+    c = CANVAS * SS / 2.0
     return [(c + (x * ca - y * sa) * scale, c + (x * sa + y * ca) * scale) for x, y in points]
 
 
@@ -153,7 +156,7 @@ def rgb565(c):
 
 
 def emit_icons(lines, name, icons):
-    lines.append(f"static const uint8_t {name}[{len(icons)}][8] = {{")
+    lines.append(f"static const uint8_t {name}[{len(icons)}][{len(icons[0])}] = {{")
     for rows in icons:
         lines.append("    {" + ", ".join("0x%02x" % b for b in rows) + "},")
     lines.append("};")
@@ -220,6 +223,27 @@ def draw_villa():
     return list(im.tobytes())
 
 
+def doubled_pixels(indices, w):
+    """Pixel-double a w-wide index image."""
+    out = []
+    for y in range(len(indices) // w):
+        row = [i for i in indices[y * w:(y + 1) * w] for _ in range(ZOOM)]
+        out += row * ZOOM
+    return out
+
+
+def doubled_icon(rows):
+    """An 8x8 one-bit icon as 16x16: two bytes per row, 16 rows."""
+    out = []
+    for b in rows:
+        wide = 0
+        for bit in range(8):
+            if b & (0x80 >> bit):
+                wide |= 0xC000 >> (bit * 2)
+        out += [wide >> 8, wide & 0xFF] * 2
+    return out
+
+
 # ---- 8x8 one-bit icons: one byte per row, most significant bit leftmost ---
 ICONS = [
     ("beer", [0x38, 0x7c, 0x7c, 0x7d, 0x7d, 0x7d, 0x7c, 0x7c], (255, 176, 0)),
@@ -232,6 +256,7 @@ ICONS = [
     ("nice girls", [0x66, 0xff, 0xff, 0x7e, 0x3c, 0x18, 0x00, 0x00], (255, 96, 152)),
 ]
 GAS_ICON = [0x3c, 0x42, 0x5e, 0x42, 0x42, 0x42, 0x7e, 0x00]
+RAUTI_ICON = [0x08, 0x10, 0x3c, 0x7e, 0x7e, 0x7e, 0x7e, 0x3c]  # a banger with its fuse
 
 
 def arrow(angle):
@@ -260,18 +285,22 @@ def main():
     vehicle(lines, "scooter", scooter_shapes, SCOOTER_PALETTE)
     vehicle(lines, "police", police_shapes, POLICE_PALETTE)
 
-    emit(lines, "uint8_t", "duke_villa_pixels", pack(draw_villa(), 4))
+    emit(lines, "uint8_t", "duke_villa_pixels", pack(doubled_pixels(draw_villa(), VILLA_W), 4))
     emit(lines, "uint16_t", "duke_villa_palette", [0] + [rgb565(c) for c in VILLA_PALETTE[1:]])
-    lines += [f"#define DUKE_VILLA_WIDTH {VILLA_W}", f"#define DUKE_VILLA_HEIGHT {VILLA_H}",
+    lines += [f"#define DUKE_VILLA_WIDTH {VILLA_W * ZOOM}", f"#define DUKE_VILLA_HEIGHT {VILLA_H * ZOOM}",
               f"#define DUKE_VILLA_COLOURS {len(VILLA_PALETTE)}",
               "#define DUKE_VILLA_LIGHT 10 /* first of three cycled string-light entries */", ""]
 
     lines.append("/* 8x8 one-bit icons, one per party item, in item order. */")
     emit_icons(lines, "duke_item_icons", [rows for _, rows, _ in ICONS])
     emit(lines, "uint16_t", "duke_item_colours", [rgb565(c) for _, _, c in ICONS])
-    emit(lines, "uint8_t", "duke_gas_icon", GAS_ICON)
-    lines.append("/* Compass arrows for the 8 headings, N first, clockwise. */")
-    emit_icons(lines, "duke_arrow_icons", [arrow(h * 45) for h in range(8)])
+    emit(lines, "uint8_t", "duke_rauti_icon", RAUTI_ICON)
+    lines.append("/* The same icons at 16x16 (two bytes per row) for the zoomed world. */")
+    emit_icons(lines, "duke_item_icons16", [doubled_icon(rows) for _, rows, _ in ICONS])
+    emit(lines, "uint8_t", "duke_gas_icon16", doubled_icon(GAS_ICON))
+    emit(lines, "uint8_t", "duke_rauti_icon16", doubled_icon(RAUTI_ICON))
+    lines.append("/* Compass arrows for the 8 headings, N first, clockwise, 16x16. */")
+    emit_icons(lines, "duke_arrow_icons16", [doubled_icon(arrow(h * 45)) for h in range(8)])
     lines += ["", "#endif"]
     OUT.write_text("\n".join(lines) + "\n")
     print(f"wrote {OUT} ({OUT.stat().st_size} bytes)")

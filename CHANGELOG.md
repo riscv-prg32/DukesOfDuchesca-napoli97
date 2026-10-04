@@ -1,5 +1,36 @@
 # Changelog
 
+## 2.1.0 — 2026-10-04 — zoom, rauti, the monuments of Napoli, easier steering
+
+### New
+
+- **Zoom.** The world is drawn at two screen pixels per world pixel. The Fiat,
+  the scooters and the police cars are 40x40 sprites redrawn at that size
+  (not pixel-doubled); items, pumps and the compass arrow are 16x16.
+- **Rauti.** Seven boxes of twenty bangers around the city. B lights one and
+  leaves it on the road; it goes off two seconds later, takes out the
+  chasers within 30 pixels and damages the Fiat if it is still there.
+- **Points of interest.** Twenty-two real places, named on screen as the car
+  reaches them, the monuments drawn each in its own shape: Piazza del
+  Plebiscito, San Francesco di Paola, Palazzo Reale, Maschio Angioino, Castel
+  dell'Ovo, Castel Sant'Elmo, Stadio San Paolo, Duomo, Museo Nazionale,
+  Reggia di Capodimonte, Stazione Centrale, Galleria Umberto I, Centro
+  Direzionale, Mostra d'Oltremare, Capodichino, Villa Comunale, Molo
+  Beverello and four more piazzas. The party villa is Villa Doria d'Angri.
+  `release-artifacts/map.png` shows them all.
+
+### Changed
+
+- **Steering.** The D-pad now points where the car should go; the car turns
+  that way and accelerates by itself, brakes through a U-turn, and is nudged
+  into a street opening it would otherwise have clipped. There is no reverse
+  any more: it is not needed. v2.0 steered like a wheel (LEFT/RIGHT relative
+  to the car, UP to accelerate), which was hard on a D-pad in a grid of
+  streets.
+- Top speed is a little lower and chasers appear and give up closer to the
+  car, to suit the smaller field of view.
+- The message line moved up; the bottom-left corner shows where you are.
+
 ## 2.0.0 — 2026-10-04 — a map of Napoli, indexed colours, palette effects, SID-like stereo
 
 ### Fixed

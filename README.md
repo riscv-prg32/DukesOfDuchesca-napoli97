@@ -9,7 +9,7 @@ screen, chased by scooter gangs who want to steal your ride and police cars
 who are curious about it. Collect the eight things no party can do without —
 beer, wine, Sangria Papelis, an amplifier, loudspeakers, a mixer, disco
 lights and nice girls — keep an eye on the fuel gauge, and reach the party
-villa at Posillipo before the night is over.
+villa at Posillipo, Villa Doria d'Angri, before the night is over.
 
 ![screens](release-artifacts/contact-sheet.png)
 
@@ -17,11 +17,24 @@ villa at Posillipo before the night is over.
 
 | Input            | Action                                             |
 |------------------|----------------------------------------------------|
-| D-Pad UP         | Accelerate                                         |
-| D-Pad DOWN       | Brake / reverse                                    |
-| D-Pad LEFT/RIGHT | Steer                                              |
+| D-Pad            | Point where to go: the car turns that way and accelerates |
 | A                | Horn: scooters nearby turn tail (1.5 s to recharge) |
+| B                | Light a rauto and leave it on the road              |
 | START            | Start, pause                                       |
+
+**Steering.** The D-pad is a direction, not a wheel: hold LEFT and the Fiat
+comes round to the west by the shortest side (a right angle takes a tenth of
+a second) and pulls away; let go and it coasts to a stop. Diagonals work.
+Facing the wrong way it brakes while it turns, so a U-turn stays inside the
+street, and if you take a turning up to seven pixels early or late the car is
+nudged into the opening instead of stopping against the corner.
+
+**Rauti.** A *rauto* is a banger. Seven boxes of twenty are lying around the
+city (red dots on the radar, the first a block north of the start). B lights
+one and leaves it where the car is; two seconds later it goes off and takes
+out every scooter and police car within 30 pixels — and dents the Fiat, like
+a chaser would, if it has not driven clear by then. Up to four can be burning
+at once.
 
 The yellow arrow orbiting the car points at the nearest item still missing;
 it turns magenta and points at the villa once the boot is full. The radar in
@@ -31,6 +44,11 @@ night is over; so is an empty tank. Chasers that cannot catch you in twenty
 seconds give up.
 
 ## The city
+
+![map](release-artifacts/map.png)
+
+The world is shown at two screen pixels per world pixel: the viewport covers
+20x12.5 tiles and the vehicles are 40x40 sprites.
 
 The map is a stylised Napoli laid out after the overview plate of a city
 street atlas — drawn from memory of it, not copied and not to scale:
@@ -50,9 +68,23 @@ street atlas — drawn from memory of it, not copied and not to scale:
 - **the north**: the Camaldoli hill, the woods and the Reggia of Capodimonte,
   the runway of Capodichino.
 
-It is 220x130 tiles (1760x1040 px, 29 screens) and stores no tile array:
-[`citymap.c`](citymap.c) computes every tile on demand from a coastline of 14
-corner points, 29 named rectangles and modulo arithmetic.
+Twenty-two **points of interest** stand where a visitor would look for them,
+and the name of the place comes up on screen as the car reaches it
+([all of them](release-artifacts/points-of-interest.png)). The monuments are
+buildings you drive around, each drawn in its own shape: Piazza del
+Plebiscito between the dome and colonnade of San Francesco di Paola and the
+red front of Palazzo Reale; the five towers of the Maschio Angioino by the
+port; Castel dell'Ovo on its islet; the star of Castel Sant'Elmo on the
+Vomero; the Stadio San Paolo with its pitch; the Duomo; the Museo
+Archeologico Nazionale at the top of Via Toledo; the Reggia di Capodimonte in
+its woods; the Stazione Centrale with its tracks; the Galleria Umberto I; the
+glass towers of the Centro Direzionale; the Mostra d'Oltremare. The party is
+at Villa Doria d'Angri.
+
+It is 220x130 tiles (1760x1040 world px, 114 screens at this zoom) and stores
+no tile array: [`citymap.c`](citymap.c) computes every tile on demand from a
+coastline of 14 corner points, 22 points of interest, 30 named rectangles and
+modulo arithmetic.
 
 ## How it uses the PRG32 firmware
 
@@ -72,8 +104,8 @@ corner points, 29 named rectangles and modulo arithmetic.
   up group by group, the shimmering gulf, the villa's dance floor and string
   lights, police light bars, a white flash and a screen shake on a crash,
   fades between screens, a banded sunset on the title.
-- **Sprites.** The vehicles are 4-bpp indexed sprites at 8 headings and the
-  villa a 4-bpp picture (`prg32_sprite_draw_indexed`); item icons and compass
+- **Sprites.** The vehicles are 40x40 4-bpp indexed sprites at 8 headings and
+  the villa a 4-bpp picture (`prg32_sprite_draw_indexed`); item icons and compass
   arrows are 1-bpp indexed sprites with a transparent background.
 - **SID-like stereo audio.** Eleven procedural instruments and four original
   tracks (a serenade on the title, a 6/8 tarantella while driving, a 90s
@@ -87,8 +119,9 @@ corner points, 29 named rectangles and modulo arithmetic.
 - **Scores** go to the firmware scoreboard
   (`prg32_score_submit_current_player`).
 
-The cartridge needs 24 KiB of cartridge RAM (the default profile is 64 KiB)
-and packs to 32 KiB including the soundtrack, icon and screenshot.
+The cartridge fits the default 64 KiB cartridge RAM profile and the 64 KiB
+package limit, soundtrack, icon and screenshot included; `build.sh` prints
+the exact sizes and fails if either is exceeded.
 
 ## Project layout
 
@@ -104,6 +137,7 @@ scripts/render_screens.py  renders the real screens on the host; Store media
 scripts/qemu_capture.py    runs the cartridge in the QEMU firmware
 scripts/store_manifest.py, scripts/check_store_bundle.py   Store bundle
 tests/test_citymap.c       map unit tests (reachability by flood fill)
+tests/map_dump.c           dumps the whole city for release-artifacts/map.png
 tests/prg32_stub.c         host model of both PRG32 display back ends
 tests/host_harness.c       autopilot, traffic and fuzz runs of the real game
 test.sh, build.sh          host checks; cartridge and Store bundle
@@ -121,9 +155,11 @@ PRG32_REPO=/path/to/PRG32 ./test.sh
   can occupy and asserts that every item, gas station, the villa and every
   open tile is connected to the start, and that the coast has the shape of
   the gulf.
-- `tests/host_harness.c` runs the real `game.c`: an autopilot wins the game
-  on empty streets (all eight items, refuelling on the way), plays twelve
-  nights in traffic, then 60,000 fuzzed frames. Every frame asserts that the
+- `tests/host_harness.c` runs the real `game.c`: it checks the rauto's fuse
+  to the tick (driven away from: no damage; sat on: one knock), an autopilot
+  wins the game on empty streets (all eight items, refuelling on the way),
+  makes a grand tour of all 22 points of interest, plays twelve nights in
+  traffic, then 60,000 fuzzed frames. Every frame asserts that the
   car and the chasers never overlap solid ground and that the QEMU and
   ESP32-C6 display models show the same picture, pixel for pixel. The build
   uses AddressSanitizer and UBSan.

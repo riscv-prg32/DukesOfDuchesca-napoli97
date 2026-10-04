@@ -59,10 +59,11 @@ static void test_coast_has_the_shape_of_the_gulf(void) {
          * is always the lungomare or a named place. */
         uint8_t shore = cm_tile_at(tx, coast - 1);
         assert(shore == CM_T_PROMENADE || shore == CM_T_PARTY || shore == CM_T_PIAZZA ||
-               shore == CM_T_PARK);
+               shore == CM_T_PARK || shore == CM_T_LANDMARK);
     }
     /* Castel dell'Ovo stands on its islet, joined by the causeway. */
-    assert(cm_tile_at(142, 110) == CM_T_PIAZZA && cm_tile_at(137, 110) == CM_T_SEA);
+    assert(cm_tile_at(142, 109) == CM_T_PIAZZA && cm_tile_at(137, 110) == CM_T_SEA);
+    assert(cm_tile_at(142, 112) == CM_T_LANDMARK);
     assert(cm_tile_at(141, 105) == CM_T_PROMENADE);
 }
 
@@ -93,6 +94,35 @@ static void test_zones_resolve(void) {
     }
 }
 
+static void test_points_of_interest(void) {
+    for (int i = 0; i < CM_POI_COUNT; ++i) {
+        const cm_poi_t *p = &cm_pois[i];
+        int around = 0;
+        assert(p->x >= 0 && p->y >= 0 && p->x + p->w <= CM_WORLD_COLS && p->y + p->h < CM_WORLD_ROWS);
+        for (int ty = p->y; ty < p->y + p->h; ++ty)
+            for (int tx = p->x; tx < p->x + p->w; ++tx) {
+                if (p->style != CM_POI_PLACE) {
+                    /* A monument stands whole: solid, on what was a city block
+                     * or a named place, never across a street of the grid. */
+                    assert(cm_tile_at(tx, ty) == CM_T_LANDMARK);
+                    assert(cm_poi_near(tx, ty) == i);
+                }
+            }
+        /* Every one can be driven up to: some reachable tile is within its
+         * surroundings, and there it is the place announced. */
+        for (int ty = p->y - 3; ty < p->y + p->h + 3; ++ty)
+            for (int tx = p->x - 3; tx < p->x + p->w + 3; ++tx) {
+                if (tx < 0 || ty < 0 || tx >= CM_WORLD_COLS || ty >= CM_WORLD_ROWS) continue;
+                if (cm_tile_is_solid(cm_tile_at(tx, ty))) continue;
+                if (seen[ty * CM_TILE_PX + 4][tx * CM_TILE_PX + 4] && cm_poi_near(tx, ty) == i) around++;
+            }
+        if (!around) { fprintf(stderr, "point of interest %d cannot be visited\n", i); assert(0); }
+    }
+    assert(cm_poi_near(cm_start_point.x, cm_start_point.y) == CM_AT_PLEBISCITO);
+    assert(cm_poi_near(cm_party_point.x, cm_party_point.y) == CM_AT_VILLA_DORIA);
+    assert(cm_poi_near(2, 30) == -1);
+}
+
 static void test_landmarks_are_reachable(void) {
     assert(cm_tile_at(cm_start_point.x, cm_start_point.y) == CM_T_PIAZZA);
     assert(cm_tile_at(cm_party_point.x, cm_party_point.y) == CM_T_PARTY);
@@ -103,6 +133,10 @@ static void test_landmarks_are_reachable(void) {
             fprintf(stderr, "item %d is not reachable from the start\n", i);
             assert(0);
         }
+    }
+    for (int i = 0; i < CM_RAUTI_COUNT; ++i) {
+        assert(!cm_tile_is_solid(cm_tile_at(cm_rauti_points[i].x, cm_rauti_points[i].y)));
+        assert(reachable(cm_rauti_points[i]));
     }
     for (int i = 0; i < CM_GAS_COUNT; ++i) {
         assert(cm_tile_at(cm_gas_points[i].x, cm_gas_points[i].y) == CM_T_GAS);
@@ -141,6 +175,7 @@ int main(void) {
     test_coast_has_the_shape_of_the_gulf();
     test_streets_fit_the_car();
     test_zones_resolve();
+    test_points_of_interest();
     test_landmarks_are_reachable();
     test_every_open_tile_is_connected();
     test_trig_tables();

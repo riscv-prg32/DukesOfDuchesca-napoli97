@@ -37,6 +37,48 @@ int cm_coast_row(int tx) {
     return cm_coast[tx];
 }
 
+/* Points of interest, in the order of the CM_AT_* enum. Buildings stand
+ * inside city blocks, clear of the streets. */
+const cm_poi_t cm_pois[CM_POI_COUNT] = {
+    {132, 88, 10, 7, CM_POI_PLACE},      /* Piazza del Plebiscito */
+    {130, 89, 2, 5, CM_POI_BASILICA},    /* San Francesco di Paola */
+    {142, 88, 4, 7, CM_POI_PALACE},      /* Palazzo Reale */
+    {148, 91, 4, 5, CM_POI_CASTLE},      /* Maschio Angioino */
+    {138, 111, 8, 3, CM_POI_SEA_CASTLE}, /* Castel dell'Ovo */
+    {90, 68, 5, 5, CM_POI_STAR_FORT},    /* Castel Sant'Elmo */
+    {30, 70, 12, 10, CM_POI_PLACE},      /* Stadio San Paolo */
+    {154, 51, 4, 4, CM_POI_CATHEDRAL},   /* Duomo */
+    {124, 43, 4, 4, CM_POI_MUSEUM},      /* Museo Archeologico Nazionale */
+    {127, 8, 6, 2, CM_POI_PALACE},       /* Reggia di Capodimonte */
+    {60, 108, 10, 8, CM_POI_PLACE},      /* Villa Doria d'Angri: the party */
+    {177, 60, 8, 4, CM_POI_STATION},     /* Stazione Centrale */
+    {136, 84, 4, 3, CM_POI_GALLERIA},    /* Galleria Umberto I */
+    {192, 52, 6, 6, CM_POI_TOWERS},      /* Centro Direzionale */
+    {14, 68, 8, 6, CM_POI_FAIR},         /* Mostra d'Oltremare */
+    {176, 6, 36, 10, CM_POI_PLACE},      /* Aeroporto di Capodichino */
+    {106, 88, 20, 4, CM_POI_PLACE},      /* Villa Comunale */
+    {154, 99, 3, 8, CM_POI_PLACE},       /* Molo Beverello */
+    {124, 66, 6, 6, CM_POI_PLACE},       /* Piazza Dante */
+    {84, 60, 6, 6, CM_POI_PLACE},        /* Piazza Vanvitelli */
+    {166, 84, 8, 6, CM_POI_PLACE},       /* Piazza Mercato */
+    {112, 84, 6, 4, CM_POI_PLACE},       /* Piazza dei Martiri */
+};
+
+static int cm_poi_within(const cm_poi_t *p, int tx, int ty, int margin) {
+    return tx >= p->x - margin && tx < p->x + p->w + margin && ty >= p->y - margin &&
+           ty < p->y + p->h + margin;
+}
+
+int cm_poi_near(int tx, int ty) {
+    for (int margin = 0; margin <= 3; margin += 3)
+        for (int building = 1; building >= 0; --building)
+            for (int i = 0; i < CM_POI_COUNT; ++i)
+                if ((cm_pois[i].style != CM_POI_PLACE) == building &&
+                    cm_poi_within(&cm_pois[i], tx, ty, margin))
+                    return i;
+    return -1;
+}
+
 /* Named places as tile-space rectangles, checked before everything else
  * (so they can also stand in the sea). The first matching zone wins. Every
  * drivable zone touches a street; reachability of every landmark is proven
@@ -52,7 +94,7 @@ const cm_zone_t cm_zones[] = {
     {84, 60, 6, 6, CM_T_PIAZZA},      /* Piazza Vanvitelli, Vomero */
     {33, 73, 6, 4, CM_T_PARK},        /* the pitch of the Stadio San Paolo... */
     {30, 70, 12, 10, CM_T_PIAZZA},    /* ...and its stands, Fuorigrotta */
-    {139, 108, 6, 5, CM_T_PIAZZA},    /* Castel dell'Ovo, on its islet */
+    {138, 108, 8, 6, CM_T_PIAZZA},    /* the islet of Castel dell'Ovo */
     {141, 103, 2, 5, CM_T_PROMENADE}, /* the causeway of Borgo Marinari */
     {154, 99, 3, 8, CM_T_PROMENADE},  /* Molo Beverello */
     {106, 88, 20, 4, CM_T_PARK},      /* Villa Comunale */
@@ -80,6 +122,16 @@ const cm_point_t cm_gas_points[CM_GAS_COUNT] = {
     {27, 84}, {79, 52}, {99, 84}, {143, 68}, {191, 84}, {113, 20}, {39, 52}, {79, 100},
 };
 
+const cm_point_t cm_rauti_points[CM_RAUTI_COUNT] = {
+    {140, 85},  /* Via Toledo, a block from the start */
+    {114, 86},  /* Piazza dei Martiri */
+    {155, 104}, /* Molo Beverello */
+    {129, 11},  /* the forecourt of the Reggia di Capodimonte */
+    {200, 8},   /* Capodichino */
+    {66, 49},   /* the Vomero */
+    {12, 81},   /* Bagnoli */
+};
+
 const cm_point_t cm_item_points[CM_ITEM_COUNT] = {
     {136, 56},  /* beer: Piazza Bellini */
     {127, 69},  /* wine: Piazza Dante */
@@ -88,7 +140,7 @@ const cm_point_t cm_item_points[CM_ITEM_COUNT] = {
     {35, 71},   /* loudspeakers: the Stadio San Paolo */
     {170, 87},  /* mixer: Piazza Mercato */
     {87, 63},   /* disco lights: Piazza Vanvitelli */
-    {142, 110}, /* nice girls: Borgo Marinari, under Castel dell'Ovo */
+    {143, 109}, /* nice girls: Borgo Marinari, under Castel dell'Ovo */
 };
 
 uint32_t cm_hash(int tx, int ty) {
@@ -122,6 +174,11 @@ uint8_t cm_tile_at(int tx, int ty) {
         return CM_T_SEA;
     }
 
+    for (int i = 0; i < CM_POI_COUNT; ++i) {
+        if (cm_pois[i].style != CM_POI_PLACE && cm_poi_within(&cm_pois[i], tx, ty, 0)) {
+            return CM_T_LANDMARK;
+        }
+    }
     for (int i = 0; i < cm_zone_count; ++i) {
         const cm_zone_t *z = &cm_zones[i];
         if (tx >= z->x && tx < z->x + z->w && ty >= z->y && ty < z->y + z->h) {
@@ -168,7 +225,8 @@ uint8_t cm_tile_at(int tx, int ty) {
 }
 
 int cm_tile_is_solid(uint8_t tile) {
-    return tile == CM_T_BUILDING || tile == CM_T_PARK || tile == CM_T_SEA;
+    return tile == CM_T_BUILDING || tile == CM_T_PARK || tile == CM_T_SEA ||
+           tile == CM_T_LANDMARK;
 }
 
 /* Arithmetic shift: negative pixels map to negative tiles, which are sea. */

@@ -4,8 +4,8 @@
 The cartridge is staged into a private copy of the firmware's flash image and
 booted in Espressif QEMU. The tool then copies the firmware's 320x240 frame
 buffer out of guest memory with the QEMU monitor's `pmemsave`, presses START
-through the UART keyboard mapper, drives for a while (accelerating, steering
-and honking), feeds the firmware's credit-paced UART audio and records it.
+through the UART keyboard mapper, drives for a while (pointing the D-pad,
+honking, pressing B), feeds the firmware's credit-paced UART audio and records it.
 
   release-artifacts/qemu/title.png, drive-*.png   real frames
   release-artifacts/qemu/audio.wav                the real mixer output
@@ -35,7 +35,7 @@ from PIL import Image
 GAME = Path(__file__).resolve().parents[1]
 RATE = 22050
 CONSOLE_PORT, AUDIO_PORT, MONITOR_PORT = 5561, 4321, 5562
-RIGHT, LEFT, UP, DOWN, A, START = "d", "a", "w", "s", "j", " "
+RIGHT, LEFT, UP, DOWN, A, B, START = "d", "a", "w", "s", "j", "k", " "
 PANEL_W, PANEL_H = 320, 240
 
 
@@ -179,13 +179,14 @@ def main() -> int:
             shots, frames, changed = 0, 0, 0
             previous = None
             while (now := time.monotonic() - start) < args.drive:
-                # Accelerate; every few seconds turn a quarter and honk.
-                keys = UP
+                # Point the D-pad one way for a few seconds, then another; honk
+                # now and then, and try B (it lights a rauto once a box is aboard).
+                keys = (UP, RIGHT, DOWN, LEFT, UP, LEFT)[int(now / 4.0) % 6]
                 phase = now % 6.0
-                if 4.0 < phase < 4.27:
-                    keys += RIGHT if int(now / 6.0) % 2 == 0 else LEFT
                 if phase < 0.1:
                     keys += A
+                if 3.0 < phase < 3.1:
+                    keys += B
                 console.sendall(keys.encode())
                 image = grab(monitor, fb_address, temp / "panel.bin")
                 if image is not None:
