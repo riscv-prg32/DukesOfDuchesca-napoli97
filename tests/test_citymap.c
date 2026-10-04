@@ -123,7 +123,11 @@ static void test_points_of_interest(void) {
      * is a short drive east of it. */
     assert(cm_pois[CM_AT_DUCHESCA].x - cm_start_point.x < 24);
     assert(cm_tile_at(152, 84) == CM_T_ROAD && 84 - cm_start_point.y < 10);
-    assert(cm_poi_near(cm_party_point.x, cm_party_point.y) == CM_AT_VILLA_DORIA);
+    assert(cm_poi_near(cm_party_point.x, cm_party_point.y) == CM_AT_GAIOLA);
+    /* The Gaiola is at the cape: the beach on the shore, the islets off it. */
+    assert(cm_pois[CM_AT_GAIOLA_ISLAND].y >= cm_coast_row(cm_pois[CM_AT_GAIOLA_ISLAND].x + 8));
+    assert(cm_tile_at(49, 122) == CM_T_SEA && cm_tile_at(54, 122) == CM_T_LANDMARK);
+    assert(cm_party_point.x < 70 && cm_party_point.y > 110);
     assert(cm_poi_near(2, 30) == -1);
 }
 

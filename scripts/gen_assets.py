@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Generate assets.h for DukesOfDuchesca-napoli97.
 
-A dev-time tool: it rasterises the three vehicles at 8 headings and the party
-villa, and emits packed prg32_indexed_sprite_t-compatible C arrays plus the
+A dev-time tool: it rasterises the three vehicles at 8 headings and emits packed prg32_indexed_sprite_t-compatible C arrays plus the
 1-bpp item icons and compass arrows. Its output (assets.h) is committed; the
 cartridge build does not re-run this script.
 
@@ -182,56 +181,6 @@ def vehicle(lines, name, shapes, palette):
     lines.append("")
 
 
-# ---- the party villa: a 48x32 facade standing in its garden ---------------
-VILLA_W, VILLA_H = 48, 32
-VILLA_PALETTE = [
-    KEY,
-    (236, 204, 148),  # 1 plaster wall
-    (176, 72, 52),    # 2 terracotta roof
-    (255, 228, 104),  # 3 lit windows
-    (56, 148, 72),    # 4 garden
-    (232, 64, 148),   # 5 party pink
-    (250, 250, 250),  # 6 columns
-    (96, 62, 44),     # 7 door
-    (24, 92, 48),     # 8 cypress
-    (200, 164, 112),  # 9 wall shade
-    (255, 64, 64),    # 10 string light A (cycled by the game)
-    (64, 255, 96),    # 11 string light B
-    (72, 136, 255),   # 12 string light C
-    (64, 176, 224),   # 13 pool
-]
-
-
-def draw_villa():
-    im = Image.new("P", (VILLA_W, VILLA_H), 0)
-    d = ImageDraw.Draw(im)
-    d.rectangle((0, 24, VILLA_W - 1, VILLA_H - 1), fill=4)
-    d.rectangle((30, 26, 44, 30), fill=13)
-    d.rectangle((8, 9, VILLA_W - 9, 25), fill=1)
-    d.rectangle((8, 22, VILLA_W - 9, 25), fill=9)
-    d.polygon([(5, 9), (VILLA_W - 6, 9), (VILLA_W - 13, 2), (12, 2)], fill=2)
-    for wx in (11, 18, VILLA_W - 23, VILLA_W - 16):
-        d.rectangle((wx, 12, wx + 4, 18), fill=3)
-    d.rectangle((VILLA_W // 2 - 3, 15, VILLA_W // 2 + 2, 25), fill=7)
-    d.rectangle((VILLA_W // 2 - 5, 13, VILLA_W // 2 + 4, 14), fill=5)
-    for cx in (8, VILLA_W - 11):
-        d.rectangle((cx, 20, cx + 2, 29), fill=6)
-    for cx in (1, 4, VILLA_W - 6, VILLA_W - 3):
-        d.polygon([(cx, 24), (cx + 1, 11), (cx + 2, 24)], fill=8)
-    for i in range(14):        # the string of party lights along the eaves
-        d.point((5 + i * 3, 10 + (i & 1)), fill=10 + i % 3)
-    return list(im.tobytes())
-
-
-def doubled_pixels(indices, w):
-    """Pixel-double a w-wide index image."""
-    out = []
-    for y in range(len(indices) // w):
-        row = [i for i in indices[y * w:(y + 1) * w] for _ in range(ZOOM)]
-        out += row * ZOOM
-    return out
-
-
 def doubled_icon(rows):
     """An 8x8 one-bit icon as 16x16: two bytes per row, 16 rows."""
     out = []
@@ -284,12 +233,6 @@ def main():
     vehicle(lines, "car", car_shapes, CAR_PALETTE)
     vehicle(lines, "scooter", scooter_shapes, SCOOTER_PALETTE)
     vehicle(lines, "police", police_shapes, POLICE_PALETTE)
-
-    emit(lines, "uint8_t", "duke_villa_pixels", pack(doubled_pixels(draw_villa(), VILLA_W), 4))
-    emit(lines, "uint16_t", "duke_villa_palette", [0] + [rgb565(c) for c in VILLA_PALETTE[1:]])
-    lines += [f"#define DUKE_VILLA_WIDTH {VILLA_W * ZOOM}", f"#define DUKE_VILLA_HEIGHT {VILLA_H * ZOOM}",
-              f"#define DUKE_VILLA_COLOURS {len(VILLA_PALETTE)}",
-              "#define DUKE_VILLA_LIGHT 10 /* first of three cycled string-light entries */", ""]
 
     lines.append("/* 8x8 one-bit icons, one per party item, in item order. */")
     emit_icons(lines, "duke_item_icons", [rows for _, rows, _ in ICONS])

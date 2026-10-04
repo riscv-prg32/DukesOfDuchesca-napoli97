@@ -12,7 +12,11 @@ chased by scooter gangs who want to steal your ride and watched by police
 patrols who will leave you alone as long as you drive past them slowly. Collect the eight things no party can do without —
 beer, wine, Sangria Papelis, an amplifier, loudspeakers, a mixer, disco
 lights and nice girls — keep an eye on the fuel gauge, and reach the party
-villa at Posillipo, Villa Doria d'Angri, before the night is over.
+before the night is over. The party is on the **beach of the Gaiola**, the
+cove under Capo Posillipo that faces the two tuff islets joined by their
+little bridge, where the summers of the 1990s saw parties that were great fun
+and not entirely legal. The game closes there, with everybody dancing on the
+sand.
 
 ![screens](release-artifacts/contact-sheet.png)
 
@@ -29,8 +33,13 @@ villa at Posillipo, Villa Doria d'Angri, before the night is over.
 comes round to the west by the shortest side (a right angle takes a tenth of
 a second) and pulls away; let go and it coasts to a stop. Diagonals work.
 Facing the wrong way it brakes while it turns, so a U-turn stays inside the
-street, and if you take a turning up to seven pixels early or late the car is
+street, and if you take a turning up to eight pixels early or late the car is
 nudged into the opening instead of stopping against the corner.
+
+**Traffic.** Other cars and the orange city buses share the streets. They are
+solid, so you go round them — keep the D-pad held and the Fiat changes lane
+by itself — and they never run you over: they stop and wait. Scooters and
+police weave through them.
 
 **The police.** Patrol cars cruise the streets (blue on the radar) and
 scooters run from them, so a patrol nearby is cover. But the white bar under
@@ -59,9 +68,9 @@ would, if it has not driven clear by then. Up to four can be burning
 at once.
 
 The yellow arrow orbiting the car points at the nearest item still missing;
-it turns magenta and points at the villa once the boot is full. The radar in
+it turns magenta and points at the Gaiola once the boot is full. The radar in
 the corner shows the whole gulf: items blink yellow, gas stations are orange,
-the villa is magenta. Three brushes with a scooter (or your own rauti) and the
+the beach is magenta. Three brushes with a scooter (or your own rauti) and the
 night is over; so is an empty tank. A scooter that cannot catch you in twenty
 seconds gives up.
 
@@ -76,7 +85,7 @@ The map is a stylised Napoli laid out after the overview plate of a city
 street atlas — drawn from memory of it, not copied and not to scale:
 
 - **the coast of the gulf**: the bay of Bagnoli, the Posillipo promontory
-  (the party villa, Parco Virgiliano at the cape), Mergellina and Via
+  (the beach and the islets of the Gaiola, Parco Virgiliano at the cape), Mergellina and Via
   Caracciolo with the Villa Comunale, the bump of Santa Lucia with Castel
   dell'Ovo on its islet, Molo Beverello and the port, and the shore falling
   away south-east towards San Giovanni; a lungomare follows all of it;
@@ -90,7 +99,7 @@ street atlas — drawn from memory of it, not copied and not to scale:
 - **the north**: the Camaldoli hill, the woods and the Reggia of Capodimonte,
   the runway of Capodichino.
 
-Twenty-four **points of interest** stand where a visitor would look for them,
+Twenty-six **points of interest** stand where a visitor would look for them,
 and the name of the place comes up on screen as the car reaches it
 ([all of them](release-artifacts/points-of-interest.png)). The monuments are
 buildings you drive around, each drawn in its own shape: Piazza del
@@ -100,12 +109,13 @@ port; Castel dell'Ovo on its islet; the star of Castel Sant'Elmo on the
 Vomero; the Rock Garden under its neon sign; the Stadio San Paolo with its pitch; the Duomo; the Museo
 Archeologico Nazionale at the top of Via Toledo; the Reggia di Capodimonte in
 its woods; the Stazione Centrale with its tracks; the Galleria Umberto I; the
-glass towers of the Centro Direzionale; the Mostra d'Oltremare. The party is
-at Villa Doria d'Angri.
+glass towers of the Centro Direzionale; the Mostra d'Oltremare; Villa Doria
+d'Angri on the hill of Posillipo; and, off the cape, the islets of the
+Gaiola with their villa and bridge, above the beach where the night ends.
 
 It is 220x130 tiles (1760x1040 world px, 114 screens at this zoom) and stores
 no tile array: [`citymap.c`](citymap.c) computes every tile on demand from a
-coastline of 14 corner points, 24 points of interest, 7 checkpoints, 30 named rectangles and
+coastline of 14 corner points, 26 points of interest, 7 checkpoints, 30 named rectangles and
 modulo arithmetic.
 
 ## How it uses the PRG32 firmware
@@ -126,8 +136,7 @@ modulo arithmetic.
   up group by group, the shimmering gulf, the villa's dance floor and string
   lights, police light bars, a white flash and a screen shake on a crash,
   fades between screens, a banded sunset on the title.
-- **Sprites.** The vehicles are 40x40 4-bpp indexed sprites at 8 headings and
-  the villa a 4-bpp picture (`prg32_sprite_draw_indexed`); item icons and compass
+- **Sprites.** The vehicles are 40x40 4-bpp indexed sprites at 8 headings (`prg32_sprite_draw_indexed`); item icons and compass
   arrows are 1-bpp indexed sprites with a transparent background.
 - **SID-like stereo audio.** Eleven procedural instruments and four original
   tracks (a serenade on the title, a 6/8 tarantella while driving, a 90s
@@ -179,11 +188,12 @@ PRG32_REPO=/path/to/PRG32 ./test.sh
   the gulf.
 - `tests/host_harness.c` runs the real `game.c`: it checks the rauto's fuse
   to the tick (driven away from: no damage; sat on: one knock) and the
-  police (a scooter runs from a patrol; a slow pass is ignored; speeding is
+  traffic (a bus in the lane is overtaken; an oncoming car never drives into
+  the Fiat), the police (a scooter runs from a patrol; a slow pass is ignored; speeding is
   chased and searched; a checkpoint at speed halts, a slow one waves on), an
   autopilot
   wins the game on empty streets (all eight items, refuelling on the way),
-  makes a grand tour of all 24 points of interest, plays twelve nights in
+  makes a grand tour of all 26 points of interest, plays twelve nights in
   traffic, then 60,000 fuzzed frames. Every frame asserts that the
   car and the chasers never overlap solid ground and that the QEMU and
   ESP32-C6 display models show the same picture, pixel for pixel. The build

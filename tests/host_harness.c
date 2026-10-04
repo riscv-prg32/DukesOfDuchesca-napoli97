@@ -56,6 +56,8 @@ int duke_test_enemy_kind(int i);
 void duke_test_place_enemy(int i, int kind, int x, int y);
 void duke_test_teleport(int x, int y);
 void duke_test_clear_enemies(void);
+int duke_test_traffic(int i, int *x, int *y, int *kind, int *dir);
+void duke_test_place_traffic(int i, int kind, int dir, int x, int y);
 
 enum { ST_TITLE = 0, ST_PLAYING, ST_PAUSED, ST_WIN, ST_LOSE };
 #define FUEL_MAX 3600
@@ -63,6 +65,8 @@ enum { ST_TITLE = 0, ST_PLAYING, ST_PAUSED, ST_WIN, ST_LOSE };
 #define SPEED_LIMIT 32
 #define KIND_SCOOTER 0
 #define KIND_POLICE 1
+#define MAX_TRAFFIC 6
+#define TRAFFIC_BUS 4
 
 #define BTN_LEFT (1u << 0)
 #define BTN_RIGHT (1u << 1)
@@ -73,9 +77,10 @@ enum { ST_TITLE = 0, ST_PLAYING, ST_PAUSED, ST_WIN, ST_LOSE };
 #define BTN_START (1u << 6)
 
 static const char *s_dump_dir;
+static int s_teleported; /* a test put the car somewhere by hand this frame */
 static int s_poi_pending, s_poi_shot;
 static long s_frames, s_parity_frames;
-static int s_max_enemies_seen, s_box_seen;
+static int s_max_enemies_seen, s_box_seen, s_cars_seen, s_buses_seen, s_traffic_shot;
 static unsigned s_poi_seen; /* a bit per point of interest the car has been at */
 
 static void dump(const char *name) {
@@ -120,6 +125,22 @@ static void frame(uint32_t input) {
             }
         }
         if (n > s_max_enemies_seen) s_max_enemies_seen = n;
+        for (int i = 0; i < MAX_TRAFFIC; ++i) {
+            int tx, ty, kind, dir;
+            if (!duke_test_traffic(i, &tx, &ty, &kind, &dir)) continue;
+            /* Traffic keeps to the streets and never runs the Fiat over. */
+            uint8_t under = cm_tile_at(tx >> 3, ty >> 3);
+            assert(under == CM_T_ROAD || under == CM_T_ROAD_LINE || under == CM_T_PROMENADE);
+            int length = kind == TRAFFIC_BUS ? 11 : 6;
+            int hx = (dir & 1) ? length : 4, hy = (dir & 1) ? 4 : length;
+            if (st == ST_PLAYING && !s_teleported)
+                assert(abs(px - tx) >= 4 + hx || abs(py - ty) >= 4 + hy);
+            if (kind == TRAFFIC_BUS) s_buses_seen++; else s_cars_seen++;
+            if (kind == TRAFFIC_BUS && !s_traffic_shot && abs(px - tx) < 50 && abs(py - ty) < 30 &&
+                duke_test_dusk() < 8) {
+                dump("14-traffic"); s_traffic_shot = 1;
+            }
+        }
         if (duke_test_rauti() > 0) s_box_seen = 1;
         if (duke_test_poi() >= 0) {
             if (!(s_poi_seen & (1u << duke_test_poi()))) {
@@ -353,6 +374,42 @@ int main(int argc, char **argv) {
     for (int i = 0; i < 70; ++i) frame(0);        /* let the invulnerability run out */
     duke_test_set_rauti(0);
 
+    /* Traffic is solid and patient. A bus stands across the street ahead: the
+     * Fiat, held straight at it, is steered round it and gets past; a car
+     * coming the other way stops, or changes lane, rather than drive into the
+     * standing Fiat. */
+    int tx0, ty0, tk, td;
+    s_teleported = 1;
+    duke_test_teleport(110 * 8 + 4, 49 * 8 + 4);
+    duke_test_place_traffic(0, TRAFFIC_BUS, 1, 116 * 8 + 4, 49 * 8 + 4); /* standing in the middle lane */
+    for (int i = 0; i < 6; ++i) {
+        frame(BTN_RIGHT);
+        duke_test_place_traffic(0, TRAFFIC_BUS, 1, 116 * 8 + 4, 49 * 8 + 4); /* hold it there */
+    }
+    for (int i = 0; i < 60 && duke_test_player_x() < 122 * 8; ++i) {
+        frame(BTN_RIGHT);
+        duke_test_place_traffic(0, TRAFFIC_BUS, 1, 116 * 8 + 4, 49 * 8 + 4);
+        if (i == 12) dump("15-overtaking");
+    }
+    assert(duke_test_player_x() >= 122 * 8);              /* round it, not through it */
+    assert(duke_test_player_y() != 49 * 8 + 4);
+    duke_test_clear_enemies();
+    duke_test_teleport(110 * 8 + 4, 49 * 8 + 4);
+    duke_test_place_traffic(0, 1, 3, 116 * 8 + 4, 49 * 8 + 4);           /* a car heading west, at the Fiat */
+    int closest = 1000;
+    for (int i = 0; i < 100; ++i) {
+        frame(0);
+        assert(duke_test_traffic(0, &tx0, &ty0, &tk, &td));
+        int gap_x = abs(tx0 - duke_test_player_x()), gap_y = abs(ty0 - duke_test_player_y());
+        /* Never inside the Fiat's box: clear along its length or across it. */
+        assert(gap_x >= 4 + ((td & 1) ? 6 : 4) || gap_y >= 4 + ((td & 1) ? 4 : 6));
+        if (gap_x + gap_y < closest) closest = gap_x + gap_y;
+    }
+    assert(closest <= 16); /* and it did come right up to it */
+    assert(duke_test_trouble() == 1);
+    duke_test_clear_enemies();
+    s_teleported = 0;
+
     /* The police. A scooter with a patrol car beside it runs from the patrol,
      * not at the Fiat. Decumano row 49 of the centro storico is a long
      * straight street, clear of checkpoints. */
@@ -424,6 +481,7 @@ int main(int argc, char **argv) {
     dump("07-win");
 
     start_game();
+    s_poi_seen = 0; /* photograph every place again, by daylight */
     long tour_start = s_frames;
     grand_tour();
     int places = 0;
@@ -447,6 +505,8 @@ int main(int argc, char **argv) {
             if (losses == 1) { for (int i = 0; i < 40; ++i) frame(0); dump("08-lose"); }
         }
     }
+    printf("traffic: cars on %d frames, buses on %d\n", s_cars_seen, s_buses_seen);
+    assert(s_cars_seen > 1000 && s_buses_seen > 1000);
     printf("rauti: a box was picked up in traffic: %s\n", s_box_seen ? "yes" : "no");
     assert(s_box_seen);
     printf("autopilot, in traffic: %d wins, %d losses, %d unfinished, %d searches, up to %d cars around\n",

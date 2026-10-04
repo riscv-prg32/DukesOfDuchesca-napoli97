@@ -1,5 +1,33 @@
 # Changelog
 
+## 2.3.0 — 2026-10-05 — the party is on the beach of the Gaiola; traffic
+
+### New
+
+- **Traffic.** Other cars (the Fiat's shape in red, blue, green and grey
+  paint) and the orange city buses drive the streets, mostly straight on.
+  They are solid: the Fiat has to go round them, and the steering nudge takes
+  it into the free lane by itself. They never drive into the Fiat: they wait,
+  and turn back if held up too long. Scooters and police weave through them.
+
+### Changed
+
+- **The ending point is the beach of the Gaiola**, in its cove under Capo
+  Posillipo, with the two islets, the villa and the little bridge standing in
+  the sea off it, the white house and the boats on the sand. It replaces the
+  villa as the place to bring the gear to.
+- **The game closes with people dancing on the beach**: a night view of the
+  cove with the islets, the moon on the water, rockets, a string of lights,
+  the loudspeakers thumping, the Fiat parked on the sand and fifteen dancers
+  round the fire.
+- Villa Doria d'Angri stays, as a monument on the hill of Posillipo.
+  Twenty-six points of interest in all.
+- The villa picture is gone from the cartridge, which pays for the ending,
+  the islets and the traffic: the package is about the size of 2.2.0's. The
+  buses are drawn from rectangles and the cars reuse the Fiat's sprite, so
+  traffic adds no picture data.
+- The steering nudge reaches one pixel further (eight), enough to change lane.
+
 ## 2.2.0 — 2026-10-04 — the Rock Garden, and a police force you have to drive past
 
 ### New

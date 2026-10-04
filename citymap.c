@@ -50,7 +50,7 @@ const cm_poi_t cm_pois[CM_POI_COUNT] = {
     {154, 51, 4, 4, CM_POI_CATHEDRAL},   /* Duomo */
     {124, 43, 4, 4, CM_POI_MUSEUM},      /* Museo Archeologico Nazionale */
     {127, 8, 6, 2, CM_POI_PALACE},       /* Reggia di Capodimonte */
-    {60, 108, 10, 8, CM_POI_PLACE},      /* Villa Doria d'Angri: the party */
+    {59, 108, 6, 3, CM_POI_PALACE},      /* Villa Doria d'Angri, on the hill of Posillipo */
     {177, 60, 8, 4, CM_POI_STATION},     /* Stazione Centrale */
     {136, 84, 4, 3, CM_POI_GALLERIA},    /* Galleria Umberto I */
     {192, 52, 6, 6, CM_POI_TOWERS},      /* Centro Direzionale */
@@ -64,6 +64,8 @@ const cm_poi_t cm_pois[CM_POI_COUNT] = {
     {112, 84, 6, 4, CM_POI_PLACE},       /* Piazza dei Martiri */
     {148, 76, 2, 3, CM_POI_CLUB},        /* the Rock Garden, Via S. Giovanni Maggiore Pignatelli */
     {163, 67, 9, 9, CM_POI_PLACE},       /* La Duchesca, between the station and Porta Capuana */
+    {52, 114, 8, 5, CM_POI_PLACE},       /* the beach of the Gaiola: the party */
+    {50, 121, 9, 4, CM_POI_ISLETS},      /* the two islets of the Gaiola and their bridge */
 };
 
 /* Posti di blocco: across a decumano (2x3 tiles) or a cardo (2x2). */
@@ -119,7 +121,7 @@ const cm_zone_t cm_zones[] = {
     {141, 103, 2, 5, CM_T_PROMENADE}, /* the causeway of Borgo Marinari */
     {154, 99, 3, 8, CM_T_PROMENADE},  /* Molo Beverello */
     {106, 88, 20, 4, CM_T_PARK},      /* Villa Comunale */
-    {60, 108, 10, 8, CM_T_PARTY},     /* the party villa at Posillipo */
+    {52, 114, 8, 5, CM_T_PARTY},      /* the beach of the Gaiola, in its cove */
     {58, 116, 14, 3, CM_T_PARK},      /* Parco Virgiliano */
     {128, 12, 2, 4, CM_T_ROAD},       /* the drive up to Capodimonte */
     {126, 8, 8, 4, CM_T_PIAZZA},      /* the Reggia di Capodimonte... */
@@ -137,7 +139,7 @@ const cm_zone_t cm_zones[] = {
 const int cm_zone_count = (int)(sizeof(cm_zones) / sizeof(cm_zones[0]));
 
 const cm_point_t cm_start_point = {147, 77};
-const cm_point_t cm_party_point = {65, 112};
+const cm_point_t cm_party_point = {56, 116};
 
 const cm_point_t cm_gas_points[CM_GAS_COUNT] = {
     {27, 84}, {79, 52}, {99, 84}, {143, 68}, {191, 84}, {113, 20}, {39, 52}, {79, 100},

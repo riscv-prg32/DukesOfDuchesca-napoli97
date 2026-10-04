@@ -83,7 +83,9 @@ static uint8_t s_fade;          /* 0 = black .. 16 = full picture */
 static uint8_t s_flash;         /* 8 = white .. 0 = none */
 static uint8_t s_dusk;          /* 0 = golden hour .. DUSK_MAX = night */
 static uint16_t w_car[DUKE_CAR_COLOURS], w_scooter[DUKE_SCOOTER_COLOURS];
-static uint16_t w_police[DUKE_POLICE_COLOURS], w_villa[DUKE_VILLA_COLOURS];
+static uint16_t w_police[DUKE_POLICE_COLOURS];
+#define TRAFFIC_COLOURS 4 /* the Fiat's sprite in other paint: the city's other cars */
+static uint16_t w_traffic[TRAFFIC_COLOURS][DUKE_CAR_COLOURS];
 static uint16_t w_items[CM_ITEM_COUNT], w_gas, w_rauti, w_dim;
 
 static uint16_t mix(uint16_t a, uint16_t b, int t, int n) {
@@ -176,12 +178,19 @@ static void palette_apply(void) {
     group(w_car, duke_car_palette, DUKE_CAR_COLOURS, 8);
     group(w_scooter, duke_scooter_palette, DUKE_SCOOTER_COLOURS, 10);
     group(w_police, duke_police_palette, DUKE_POLICE_COLOURS, 10);
-    group(w_villa, duke_villa_palette, DUKE_VILLA_COLOURS, 12);
+    for (int i = 0; i < TRAFFIC_COLOURS; ++i) {
+        static const uint16_t paint[TRAFFIC_COLOURS] = {0xC904, 0x2B79, 0x3D08, 0x94B2};
+        uint16_t authored[DUKE_CAR_COLOURS];
+        for (int k = 0; k < DUKE_CAR_COLOURS; ++k) authored[k] = duke_car_palette[k];
+        authored[1] = authored[3] = paint[i];               /* body, and no go-faster stripes */
+        authored[5] = mix(paint[i], PRG32_COLOR_BLACK, 1, 3);
+        group(w_traffic[i], authored, DUKE_CAR_COLOURS, 10);
+        w_traffic[i][4] = program(fx(duke_car_palette[4])); /* headlights shine */
+    }
     /* Lamps and lit windows shine: no daylight on them. */
     w_car[4] = program(fx(duke_car_palette[4]));
     w_scooter[3] = program(fx(duke_scooter_palette[3]));
     w_police[6] = program(fx(duke_police_palette[6]));
-    w_villa[3] = program(fx(duke_villa_palette[3]));
     for (int i = 0; i < CM_ITEM_COUNT; ++i) w_items[i] = program(fx(duke_item_colours[i]));
     w_gas = program(fx(PRG32_COLOR_WHITE));
     w_rauti = program(fx(0xFAE0));
@@ -192,17 +201,14 @@ static void palette_apply(void) {
 static void palette_animate(uint32_t t) {
     static const uint16_t disco[6] = {0xF81F, 0xFFE0, 0x07FF, 0xF800, 0x07E0, 0x781F};
     static const uint16_t sea[3] = {0x12B5, 0x2BD9, 0x7DDD};
-    static const uint16_t lamps[3] = {0xF9E7, 0x47E9, 0x4C5F};
     int phase = (int)(t >> 3);
     /* The gulf: a deep base and two glints that swap, so the water shimmers. */
     prg32_palette_set(IX_SEA0, lit(sea[0], 16));
     prg32_palette_set(IX_SEA1, lit(sea[1 + (phase & 1)], 10));
     prg32_palette_set(IX_SEA2, lit(sea[2 - (phase & 1)], 10));
-    /* The villa's dance floor and string lights. */
+    /* Party lights: the string over the beach, the neon of the Rock Garden. */
     prg32_palette_set(IX_PARTY0, fx(disco[phase % 6]));
     prg32_palette_set(IX_PARTY1, fx(disco[(phase + 3) % 6]));
-    for (int i = 0; i < 3; ++i)
-        w_villa[DUKE_VILLA_LIGHT + i] = program(fx(lamps[(i + phase) % 3]));
     /* Windows come on one group at a time as night falls; one group flickers. */
     prg32_palette_set(IX_WINDOW, fx(mix(0x3A2B, C_WINDOW_LIT, s_dusk, DUSK_MAX)));
     prg32_palette_set(IX_WINDOW2, fx(s_dusk < 8 ? 0x3A2B
@@ -270,7 +276,7 @@ enum { MSG_NONE = 0, MSG_ITEM, MSG_GAS, MSG_ALL, MSG_LOW, MSG_HIT, MSG_NEED, MSG
 #define BRAKE_Q4 8
 #define FRICTION_Q4 2
 #define TURN_STEPS 3    /* 32nds of a turn per tick: a right angle in three ticks */
-#define NUDGE_REACH 7   /* how far off a street opening the car is still steered into it */
+#define NUDGE_REACH 8   /* how far off a street opening (or a free lane) the car is still steered into it */
 
 #define FUEL_MAX 3600
 #define FUEL_REFILL_RATE 40
@@ -307,6 +313,16 @@ enum { MSG_NONE = 0, MSG_ITEM, MSG_GAS, MSG_ALL, MSG_LOW, MSG_HIT, MSG_NEED, MSG
 #define MAX_POLICE 3
 #define MAX_SCOOTERS 3
 
+/* Traffic: other cars, and the orange city buses. They keep to the streets,
+ * mostly straight on, and are solid: the Fiat has to go round them, and they
+ * wait rather than run it over. */
+#define MAX_TRAFFIC 6
+#define MAX_BUSES 2
+#define TRAFFIC_BUS TRAFFIC_COLOURS /* kinds 0..3 are cars by paint, 4 is a bus */
+#define CAR_HALF_LENGTH 6
+#define BUS_HALF_LENGTH 11
+#define TRAFFIC_PATIENCE 60 /* ticks held up before turning back */
+
 #define MAX_ENEMIES 6
 #define MAX_PARTICLES 32
 
@@ -322,6 +338,11 @@ typedef struct {
     uint8_t chasing;   /* a patrol car after the speeding Fiat */
     uint16_t patience; /* ticks before the chaser gives up */
 } duke_enemy_t;
+
+typedef struct {
+    int16_t x, y;      /* world pixels; always on a tile-centre line */
+    uint8_t kind, active, dir, acc, wait;
+} duke_traffic_t;
 
 typedef struct {
     int16_t x, y;       /* world pixels */
@@ -350,6 +371,8 @@ static uint8_t s_enemies_on = 1;
 static duke_enemy_t s_enemies[MAX_ENEMIES];
 static duke_particle_t s_particles[MAX_PARTICLES];
 static duke_rauto_t s_lit[MAX_RAUTI];
+static duke_traffic_t s_traffic[MAX_TRAFFIC];
+static int s_traffic_timer;
 static uint8_t s_box_taken[CM_RAUTI_COUNT];
 static int s_rauti, s_rauto_cd;
 static int s_poi = -1, s_poi_ticks;
@@ -364,6 +387,25 @@ static uint32_t rnd(void) {
 
 static int player_x(void) { return (int)(s_player.x_q4 / Q4); }
 static int player_y(void) { return (int)(s_player.y_q4 / Q4); }
+
+/* Would the Fiat's box at (px,py) touch a car or a bus? */
+static int traffic_hits(int px, int py) {
+    for (int i = 0; i < MAX_TRAFFIC; ++i) {
+        const duke_traffic_t *t = &s_traffic[i];
+        if (!t->active) continue;
+        int length = t->kind == TRAFFIC_BUS ? BUS_HALF_LENGTH : CAR_HALF_LENGTH;
+        int hx = (t->dir & 1) ? length : CM_CAR_HALF, hy = (t->dir & 1) ? CM_CAR_HALF : length;
+        if (duke_abs(px - t->x) < CM_CAR_HALF + hx && duke_abs(py - t->y) < CM_CAR_HALF + hy) return 1;
+    }
+    return 0;
+}
+
+/* Solid ground or traffic. Should the Fiat ever find itself inside a vehicle
+ * (it cannot drive into one), traffic stops counting until it is out. */
+static int car_blocked(int px, int py) {
+    if (cm_box_blocked(px, py)) return 1;
+    return traffic_hits(px, py) && !traffic_hits(player_x(), player_y());
+}
 
 static void say(int msg, int arg, int ticks) {
     s_msg = msg; s_msg_arg = arg; s_msg_ticks = ticks;
@@ -405,6 +447,8 @@ static const char *poi_name(int i) {
     case CM_AT_DANTE: return "PIAZZA DANTE";
     case CM_AT_VANVITELLI: return "PIAZZA VANVITELLI";
     case CM_AT_ROCK_GARDEN: return "ROCK GARDEN";
+    case CM_AT_GAIOLA: return "SPIAGGIA DELLA GAIOLA";
+    case CM_AT_GAIOLA_ISLAND: return "ISOLA DELLA GAIOLA";
     case CM_AT_DUCHESCA: return "LA DUCHESCA";
     case CM_AT_MERCATO: return "PIAZZA MERCATO";
     default: return "PIAZZA DEI MARTIRI";
@@ -458,6 +502,8 @@ static void reset_game(void) {
     for (int i = 0; i < MAX_ENEMIES; ++i) s_enemies[i].active = 0;
     for (int i = 0; i < MAX_PARTICLES; ++i) s_particles[i].life = 0;
     for (int i = 0; i < MAX_RAUTI; ++i) s_lit[i].fuse = s_lit[i].boom = 0;
+    for (int i = 0; i < MAX_TRAFFIC; ++i) s_traffic[i].active = 0;
+    s_traffic_timer = 30;
     for (int i = 0; i < CM_RAUTI_COUNT; ++i) s_box_taken[i] = 0;
     s_rauti = s_rauto_cd = 0;
     s_poi = -1;
@@ -486,7 +532,8 @@ static void finish(int state) {
     if (s_score > s_best) s_best = s_score;
     if (s_score > 0) prg32_score_submit_current_player(GAME_ID, (uint32_t)s_score);
     enter(state);
-    s_fade = 16; /* the result appears over the scene, which stays lit */
+    if (state == ST_WIN) s_dusk = DUSK_MAX; /* the party is at night, and fades in */
+    else s_fade = 16;                      /* bad news appears over the scene, which stays lit */
 }
 
 /* ---- the player ---------------------------------------------------------
@@ -506,16 +553,17 @@ static int wanted_heading(uint32_t input) {
 
 /* The car is pushed along one axis but something is in the way: if a street
  * opens within NUDGE_REACH pixels to either side, slide one pixel towards
- * it, so a turn taken a little early or late still goes in. */
+ * it, so a turn taken a little early or late still goes in -- and a car or
+ * a bus in the way is overtaken without lifting off. */
 static void nudge_into_opening(int step_x, int step_y) {
     int px = player_x(), py = player_y();
     for (int reach = 1; reach <= NUDGE_REACH; ++reach) {
         for (int side = -1; side <= 1; side += 2) {
             int ox = step_y ? side * reach : 0, oy = step_x ? side * reach : 0;
-            if (cm_box_blocked(px + ox + step_x, py + oy + step_y)) continue;
+            if (car_blocked(px + ox + step_x, py + oy + step_y)) continue;
             /* Every pixel on the way there must be free as well. */
             int sx = step_y ? side : 0, sy = step_x ? side : 0;
-            if (cm_box_blocked(px + sx, py + sy)) continue;
+            if (car_blocked(px + sx, py + sy)) continue;
             s_player.x_q4 += sx * Q4;
             s_player.y_q4 += sy * Q4;
             return;
@@ -547,9 +595,9 @@ static void update_player(uint32_t input) {
 
     /* Axis-separated slide: motion accumulates in Q4, solidity is tested on
      * whole pixels straight from the procedural map. */
-    if (!cm_box_blocked((int)((c->x_q4 + dx) / Q4), player_y())) c->x_q4 += dx;
+    if (!car_blocked((int)((c->x_q4 + dx) / Q4), player_y())) c->x_q4 += dx;
     else blocked_x = 1;
-    if (!cm_box_blocked(player_x(), (int)((c->y_q4 + dy) / Q4))) c->y_q4 += dy;
+    if (!car_blocked(player_x(), (int)((c->y_q4 + dy) / Q4))) c->y_q4 += dy;
     else blocked_y = 1;
     if (want >= 0 && (want & 7) == 0) {
         if (blocked_x && dy == 0) nudge_into_opening(dx > 0 ? 1 : -1, 0);
@@ -618,6 +666,86 @@ static int trouble(int reason, int world_x, int world_y) {
     s_lose_reason = reason;
     finish(ST_LOSE);
     return 1;
+}
+
+/* ---- traffic ------------------------------------------------------------
+ */
+/* The four ways along the grid: north, east, south, west. */
+static const int8_t dir_dx[4] = {0, 1, 0, -1};
+static const int8_t dir_dy[4] = {-1, 0, 1, 0};
+
+static int is_street(int tx, int ty) {
+    uint8_t t = cm_tile_at(tx, ty);
+    return t == CM_T_ROAD || t == CM_T_ROAD_LINE || t == CM_T_PROMENADE;
+}
+
+static void update_traffic(void) {
+    int px = player_x(), py = player_y();
+
+    if (s_enemies_on && --s_traffic_timer <= 0) {
+        int slot = -1, buses = 0;
+        s_traffic_timer = 20 + (int)(rnd() % 40u);
+        for (int i = 0; i < MAX_TRAFFIC; ++i) {
+            if (!s_traffic[i].active) { if (slot < 0) slot = i; }
+            else if (s_traffic[i].kind == TRAFFIC_BUS) buses++;
+        }
+        int dx = (int)(rnd() % 45u) - 22, dy = (int)(rnd() % 45u) - 22;
+        int tx = (px >> 3) + dx, ty = (py >> 3) + dy;
+        /* Off screen only, and on a street. */
+        if (slot >= 0 && (duke_abs(dx) >= 12 || duke_abs(dy) >= 8) && is_street(tx, ty)) {
+            duke_traffic_t *t = &s_traffic[slot];
+            t->x = (int16_t)(tx * 8 + 4);
+            t->y = (int16_t)(ty * 8 + 4);
+            t->active = 1;
+            t->acc = t->wait = 0;
+            t->dir = (uint8_t)(rnd() & 3u);
+            t->kind = (uint8_t)(buses < MAX_BUSES && (rnd() % 3u) == 0 ? TRAFFIC_BUS
+                                                                      : rnd() % TRAFFIC_COLOURS);
+        }
+    }
+
+    for (int i = 0; i < MAX_TRAFFIC; ++i) {
+        duke_traffic_t *t = &s_traffic[i];
+        if (!t->active) continue;
+        if (duke_abs(px - t->x) > 200 || duke_abs(py - t->y) > 200) { t->active = 0; continue; }
+        int length = t->kind == TRAFFIC_BUS ? BUS_HALF_LENGTH : CAR_HALF_LENGTH;
+        int budget = t->acc + (t->kind == TRAFFIC_BUS ? 16 : 24);
+        while (budget >= Q4) {
+            budget -= Q4;
+            if ((t->x & 7) == 4 && (t->y & 7) == 4) {
+                /* At a tile centre: mostly straight on, sometimes a turn,
+                 * back the way it came only out of a dead end. */
+                int tx = t->x >> 3, ty = t->y >> 3, pick = -1, open = 0;
+                int straight = is_street(tx + dir_dx[t->dir], ty + dir_dy[t->dir]);
+                if (!straight || (rnd() & 7u) == 0) {
+                    for (int d = 0; d < 4; ++d) {
+                        if (d == ((t->dir + 2) & 3) || !is_street(tx + dir_dx[d], ty + dir_dy[d])) continue;
+                        if ((rnd() % (uint32_t)++open) == 0) pick = d;
+                    }
+                    int turned = pick >= 0 ? pick : (t->dir + 2) & 3;
+                    /* Swinging round changes the ground the vehicle covers:
+                     * not if that would sweep over the Fiat. */
+                    int tx_half = (turned & 1) ? length : CM_CAR_HALF, ty_half = (turned & 1) ? CM_CAR_HALF : length;
+                    if (((turned ^ t->dir) & 1) && duke_abs(px - t->x) < CM_CAR_HALF + tx_half &&
+                        duke_abs(py - t->y) < CM_CAR_HALF + ty_half)
+                        break;
+                    t->dir = (uint8_t)turned;
+                }
+            }
+            int nx = t->x + dir_dx[t->dir], ny = t->y + dir_dy[t->dir];
+            if (!is_street(nx >> 3, ny >> 3)) { t->dir = (uint8_t)((t->dir + 2) & 3); break; }
+            int hx = (t->dir & 1) ? length : CM_CAR_HALF, hy = (t->dir & 1) ? CM_CAR_HALF : length;
+            if (duke_abs(px - nx) < CM_CAR_HALF + hx && duke_abs(py - ny) < CM_CAR_HALF + hy) {
+                /* The Fiat is in the way: wait, and after a while turn round. */
+                if (++t->wait > TRAFFIC_PATIENCE) { t->wait = 0; t->dir = (uint8_t)((t->dir + 2) & 3); }
+                break;
+            }
+            t->wait = 0;
+            t->x = (int16_t)nx;
+            t->y = (int16_t)ny;
+        }
+        t->acc = (uint8_t)(budget & (Q4 - 1));
+    }
 }
 
 /* ---- rauti --------------------------------------------------------------
@@ -698,8 +826,6 @@ static void update_rauti(uint32_t pressed) {
  * They drive the street grid tile by tile, like the ghosts of a maze game:
  * at each tile centre they take the open direction that brings them closest
  * to their target, never reversing unless the street is a dead end. */
-static const int8_t dir_dx[4] = {0, 1, 0, -1};
-static const int8_t dir_dy[4] = {-1, 0, 1, 0};
 
 static void enemy_choose(duke_enemy_t *e) {
     int tx = e->x >> 3, ty = e->y >> 3;
@@ -984,6 +1110,7 @@ static void step(uint32_t input, uint32_t pressed) {
         if (s_dusk < DUSK_MAX && s_play_ticks % DUSK_TICKS == 0) s_dusk++;
         if (s_invuln > 0) s_invuln--;
         update_player(input);
+        update_traffic();
         if (s_state == ST_PLAYING) update_police_checks();
         if (s_state == ST_PLAYING) update_rauti(pressed);
         if (s_state == ST_PLAYING) update_enemies(pressed);
@@ -1000,14 +1127,6 @@ static void step(uint32_t input, uint32_t pressed) {
         if (pressed & PRG32_BTN_START) s_state = ST_PLAYING;
         break;
     case ST_WIN:
-        if ((s_tick & 3u) == 0) {
-            /* Confetti over the villa. */
-            uint32_t r = rnd();
-            particle((s_camera_x + (int)(r % 320u)) / ZOOM, s_camera_y / ZOOM, (int)((r >> 9) & 3u) - 1, 4,
-                     40, (r & 1u) ? IX_PARTY0 : IX_PARTY1);
-        }
-        update_particles();
-        /* fall through */
     case ST_LOSE:
         if (pressed & (PRG32_BTN_START | PRG32_BTN_A)) enter(ST_TITLE);
         break;
@@ -1072,9 +1191,12 @@ static int ground_index(int kind, int tx, int ty) {
     case CM_T_PIAZZA: return IX_PIAZZA;
     case CM_T_PARK: return IX_PARK;
     case CM_T_GAS: return IX_GAS;
-    case CM_T_PARTY: return ((tx + ty) & 1) ? IX_PARTY0 : IX_PARTY1;
+    case CM_T_PARTY: return IX_PROM; /* the sand of the Gaiola */
     case CM_T_PROMENADE: return IX_PROM;
-    case CM_T_LANDMARK: return IX_KERB;
+    case CM_T_LANDMARK:
+        /* Monuments stand on paving -- except the islets of the Gaiola, off
+         * the cape in the far south-west, which stand in the water. */
+        return tx < 60 && ty >= cm_coast_row(tx) ? IX_SEA0 : IX_KERB;
     default: return IX_ASPHALT;
     }
 }
@@ -1142,6 +1264,9 @@ static void draw_city(int cam_x, int cam_y) {
                 break;
             case CM_T_PIAZZA:
                 if (((tx + ty) & 1) == 0) detail(x, y, 3, 3, 2, 2, IX_PAVE);
+                break;
+            case CM_T_PARTY:
+                if ((cm_hash(tx, ty) & 3u) == 0) detail(x, y, 2, 5, 2, 1, IX_PAVE);
                 break;
             case CM_T_ROAD_LINE:
                 detail(x, y, 1, 3, 6, 2, IX_LINE);
@@ -1286,6 +1411,17 @@ static void draw_monument(int style, int w, int h) {
         lm(5, 12, 2, 6, IX_PARTY1); lm(9, 12, 2, 6, IX_PARTY0); /* the amps by the stage */
         lm(0, h / 2 - 2, 2, 5, IX_BLACK); lm(0, h / 2 - 2, 1, 1, IX_SPARK); /* the door, on the vico */
         break;
+    case CM_POI_ISLETS: /* the Gaiola: two tuff rocks, a villa on one, the little bridge */
+        lm(1, 6, 30, h - 8, IX_ROOF1); lm(4, 4, 24, 4, IX_ROOF1);
+        lm(1, h - 6, 30, 4, IX_SHADOW);
+        lm(5, 5, 22, 9, IX_PARK);
+        slab(9, 2, 15, 9, IX_MARBLE);
+        lm(12, 5, 2, 2, IX_WINDOW); lm(18, 5, 2, 2, IX_WINDOW2);
+        lm(40, 8, 28, h - 11, IX_ROOF1); lm(43, 6, 22, 4, IX_ROOF1);
+        lm(40, h - 7, 28, 4, IX_SHADOW);
+        lm(44, 7, 20, 8, IX_PARK);
+        lm(31, 10, 9, 2, IX_KERB); lm(31, 12, 1, 3, IX_KERB); lm(39, 12, 1, 3, IX_KERB);
+        break;
     case CM_POI_FAIR: /* Mostra d'Oltremare: the gardens and the fountain of the Esedra */
         lm(0, 0, w, h, IX_PARK);
         lm(18, 12, 28, 24, IX_PAVE);
@@ -1318,6 +1454,17 @@ static void draw_monuments(int cam_x, int cam_y) {
             lm(25, 25, 46, 1, IX_RAIL); lm(25, 54, 46, 1, IX_RAIL);
             lm(25, 25, 1, 30, IX_RAIL); lm(70, 25, 1, 30, IX_RAIL);
             lm(47, 25, 1, 30, IX_RAIL); lm(44, 37, 7, 6, IX_RAIL); lm(45, 38, 5, 4, IX_PARK);
+        } else if (i == CM_AT_GAIOLA) {
+            /* The cove: the white house, boats pulled up on the sand, a string
+             * of lights and the fire the party gathers round. */
+            slab(2, 2, 20, 11, IX_RAIL);
+            lm(5, 6, 2, 3, IX_WINDOW); lm(11, 6, 2, 3, IX_WINDOW2); lm(17, 6, 2, 4, IX_SHADOW);
+            for (int k = 0; k < 4; ++k) {
+                lm(40 + k * 6, 4 + (k & 1), 4, 9, (k & 1) ? IX_RAIL : IX_SEA1);
+                lm(41 + k * 6, 6 + (k & 1), 2, 5, IX_SHADOW);
+            }
+            for (int k = 0; k < 10; ++k) lm(3 + k * 6, 17 + (k & 1), 2, 2, (k & 1) ? IX_PARTY0 : IX_PARTY1);
+            lm(30, 26, 4, 3, IX_SHADOW); lm(31, 24, 2, 3, IX_SPARK);
         } else if (i == CM_AT_PLEBISCITO) {
             /* The two bronze horsemen in front of the basilica. */
             lm(12, 16, 3, 3, IX_SHADOW); lm(12, 37, 3, 3, IX_SHADOW);
@@ -1362,7 +1509,48 @@ static void draw_checkpoints(int cam_x, int cam_y) {
     }
 }
 
-/* The nearest thing still to fetch: an item, or the villa once the boot is full. */
+/* A city bus, drawn from rectangles: `along` runs from the tail (-) to the
+ * nose (+), `across` from its left to its right, in world pixels. */
+static int s_bus_x, s_bus_y, s_bus_dir;
+
+static void bus_part(int along, int across, int length, int width, int index) {
+    int x, y, w = width, h = length;
+    switch (s_bus_dir) {
+    case 0: x = across; y = -(along + length); break;
+    case 2: x = -(across + width); y = along; break;
+    case 1: x = along; y = across; w = length; h = width; break;
+    default: x = -(along + length); y = -(across + width); w = length; h = width; break;
+    }
+    box(s_bus_x + x * ZOOM, s_bus_y + y * ZOOM, w * ZOOM, h * ZOOM, index);
+}
+
+static void draw_traffic(int cam_x, int cam_y) {
+    for (int i = 0; i < MAX_TRAFFIC; ++i) {
+        const duke_traffic_t *t = &s_traffic[i];
+        if (!t->active) continue;
+        int sx = t->x * ZOOM - cam_x, sy = t->y * ZOOM - cam_y;
+        if (sx < -60 || sy < -60 || sx > PRG32_GAME_W + 60 || sy > PRG32_GAME_H + 60) continue;
+        if (t->kind != TRAFFIC_BUS) {
+            draw_vehicle(duke_car_pixels, w_traffic[t->kind], DUKE_CAR_COLOURS, t->dir * 2, sx, sy);
+            continue;
+        }
+        s_bus_x = sx; s_bus_y = sy; s_bus_dir = t->dir;
+        bus_part(-12, -5, 24, 10, IX_SHADOW);  /* the outline */
+        bus_part(-12, -4, 23, 9, IX_GAS);      /* orange, like every bus in town */
+        bus_part(-10, -3, 18, 1, IX_GLASS);    /* the side windows */
+        bus_part(-10, 3, 18, 1, IX_GLASS);
+        bus_part(-8, -1, 15, 3, IX_KERB);      /* the roof panel */
+        bus_part(-5, -1, 3, 3, IX_SHADOW);     /* two hatches */
+        bus_part(1, -1, 3, 3, IX_SHADOW);
+        bus_part(9, -4, 2, 9, IX_GLASS);       /* the windscreen */
+        bus_part(11, -4, 1, 2, IX_SPARK);      /* headlights */
+        bus_part(11, 3, 1, 2, IX_SPARK);
+        bus_part(-12, -4, 1, 2, IX_RED);       /* tail lights */
+        bus_part(-12, 3, 1, 2, IX_RED);
+    }
+}
+
+/* The nearest thing still to fetch: an item, or the beach once the boot is full. */
 static int target(int *wx, int *wy) {
     int px = player_x(), py = player_y(), best = -1;
     int32_t best_d = 0;
@@ -1410,10 +1598,6 @@ static void draw_world(void) {
     draw_monuments(cam_x, cam_y);
     draw_checkpoints(cam_x, cam_y);
 
-    sprite4(duke_villa_pixels, w_villa, DUKE_VILLA_COLOURS, DUKE_VILLA_WIDTH, DUKE_VILLA_HEIGHT, 1, 0,
-            cm_party_point.x * TILE_SCREEN - DUKE_VILLA_WIDTH / 2 - cam_x,
-            cm_party_point.y * TILE_SCREEN - 8 - DUKE_VILLA_HEIGHT - cam_y);
-
     for (int i = 0; i < CM_GAS_COUNT; ++i)
         icon16(duke_gas_icon16, w_gas, cm_gas_points[i].x * TILE_SCREEN - cam_x,
                cm_gas_points[i].y * TILE_SCREEN - cam_y);
@@ -1456,6 +1640,8 @@ static void draw_world(void) {
         const duke_particle_t *p = &s_particles[i];
         if (p->life) box(p->x_q2 * ZOOM / 4 - cam_x, p->y_q2 * ZOOM / 4 - cam_y, 3, 3, p->ix);
     }
+
+    draw_traffic(cam_x, cam_y);
 
     for (int i = 0; i < MAX_ENEMIES; ++i) {
         const duke_enemy_t *e = &s_enemies[i];
@@ -1544,7 +1730,7 @@ static void draw_hud(void) {
     if (s_msg_ticks && s_state == ST_PLAYING) {
         switch (s_msg) {
         case MSG_ITEM: text_centred(172, item_name(s_msg_arg), w_items[s_msg_arg]); break;
-        case MSG_ALL: text_centred(172, "ALL ABOARD - TO THE VILLA!", PRG32_COLOR_MAGENTA); break;
+        case MSG_ALL: text_centred(172, "ALL ABOARD - TO THE GAIOLA!", PRG32_COLOR_MAGENTA); break;
         case MSG_GAS: text_centred(172, "FILL 'ER UP", PRG32_COLOR_GREEN); break;
         case MSG_LOW: text_centred(172, "LOW ON GAS!", PRG32_COLOR_RED); break;
         case MSG_NEED: text_centred(172, "NO PARTY WITHOUT THE GEAR", PRG32_COLOR_YELLOW); break;
@@ -1627,12 +1813,110 @@ static void draw_title(void) {
     box(20, 46, 280, 2, IX_YELLOW);
     text_centred(21, "D U K E S   O F   D U C H E S C A", PRG32_COLOR_YELLOW);
     text_centred(34, "- NAPOLI, SUMMER 1997 -", PRG32_COLOR_WHITE);
-    text_centred(54, "FROM THE ROCK GARDEN TO THE PARTY", PRG32_COLOR_WHITE);
+    text_centred(54, "FROM THE ROCK GARDEN TO THE GAIOLA", PRG32_COLOR_WHITE);
     if (s_best > 0) {
         text(104, 150, "BEST", PRG32_COLOR_CYAN);
         text(144, 150, duke_utoa((unsigned)s_best, buf, 6), PRG32_COLOR_WHITE);
     }
     if (s_tick & 16u) text_centred(106, "PRESS START", PRG32_COLOR_YELLOW);
+}
+
+/* ---- the ending: a summer night on the beach of the Gaiola --------------
+ * The view from above the cove: the two tuff islets joined by their little
+ * bridge, the villa on the left one, the white house and the boats on the
+ * sand, the Fiat's boot open, and everybody dancing. */
+static void dancer(int x, int y, int i) {
+    static const uint8_t shirts[6] = {IX_RED, IX_YELLOW, 6 /* cyan */, IX_MAGENTA, IX_GREEN, IX_WHITE};
+    int beat = (int)((s_tick >> 2) + (uint32_t)i * 3u);
+    int pose = (beat >> 1) & 3, shirt = shirts[i % 6];
+    if (beat & 1) y -= 2; /* everybody hops, nobody in step */
+    box(x + 2, y, 4, 4, IX_LIGHT);
+    box(x + 1, y + 4, 6, 7, shirt);
+    box(x + 1, y + 11, 2, (pose & 1) ? 3 : 5, IX_KERB);
+    box(x + 5, y + 11, 2, (pose & 1) ? 5 : 3, IX_KERB);
+    if (pose == 0 || pose == 1) box(x - 1, y - 2, 2, 7, shirt); /* left arm up... */
+    else box(x - 3, y + 5, 4, 2, shirt);                        /* ...or out */
+    if (pose == 0 || pose == 3) box(x + 7, y - 2, 2, 7, shirt);
+    else box(x + 7, y + 5, 4, 2, shirt);
+}
+
+static void rocket(int x, int y, int phase) {
+    int t = (int)((s_tick + (uint32_t)phase) % 48u);
+    if (t < 12) { box(x, y + (12 - t) * 4, 2, 4, IX_SPARK); return; } /* going up */
+    int r = (t - 12) * 2;
+    for (int k = 0; k < 8 && t < 40; ++k)
+        box(x + cm_cos_table[k * 4] * r / 256, y + cm_sin_table[k * 4] * r / 256, 2, 2,
+            (k & 1) ? IX_PARTY0 : IX_PARTY1);
+}
+
+static void draw_ending(void) {
+    static const uint16_t night[6] = {0x0005, 0x0808, 0x080B, 0x102E, 0x1851, 0x20B4};
+    char buf[8];
+    for (int i = 0; i < 6; ++i) {
+        prg32_palette_set((uint8_t)(IX_SKY0 + i), fx(night[i]));
+        box(0, i * 12, PRG32_GAME_W, 12, IX_SKY0 + i);
+    }
+    for (int i = 0; i < 24; ++i)
+        if (((s_tick >> 3) + (uint32_t)i) & 3u) box((i * 139) % 320, (i * 37) % 60, 1, 1, IX_WHITE);
+    box(258, 44, 12, 12, IX_WHITE); /* the moon... */
+    box(256, 46, 16, 8, IX_WHITE);
+    box(0, 72, PRG32_GAME_W, 82, IX_SEA0);
+    for (int i = 0; i < 9; ++i)   /* ...and its path on the water */
+        box(258 - i * 2 + (int)((s_tick >> 3) & 1u) * 2, 76 + i * 8, 12 + i * 3, 1, IX_SEA2);
+    for (int i = 0; i < 30; ++i)
+        box((i * 97 + (int)(s_tick >> 3)) % 320, 76 + (i * 29) % 70, 5, 1, (i & 1) ? IX_SEA1 : IX_SEA2);
+    rocket(40, 40, 0);
+    rocket(200, 34, 19);
+    rocket(300, 50, 33);
+
+    /* The left islet with the villa, the right one, the bridge between. */
+    box(66, 76, 78, 30, IX_ROOF1); box(72, 70, 64, 8, IX_ROOF1); box(66, 100, 78, 6, IX_SHADOW);
+    box(76, 66, 52, 8, IX_PARK);
+    box(84, 52, 40, 16, IX_RAIL); box(84, 52, 40, 2, IX_KERB); box(96, 46, 16, 6, IX_RAIL);
+    for (int i = 0; i < 4; ++i) box(89 + i * 9, 58, 4, 5, (i & 1) ? IX_WINDOW2 : IX_WINDOW);
+    box(166, 78, 62, 28, IX_ROOF1); box(172, 72, 50, 8, IX_ROOF1); box(166, 100, 62, 6, IX_SHADOW);
+    box(174, 68, 44, 8, IX_PARK);
+    box(144, 80, 22, 3, IX_KERB); box(144, 83, 2, 8, IX_KERB); box(164, 83, 2, 8, IX_KERB);
+    box(150, 83, 10, 2, IX_SEA0); /* the arch */
+
+    /* The cove: surf, sand, the white house, the boats. */
+    for (int i = 0; i < 8; ++i) {
+        int inset = i < 4 ? i * 14 : (7 - i) * 14; /* the shoreline curves in */
+        box(i * 40, 150 - inset / 6, 40, 3, IX_RAIL);
+        box(i * 40, 153 - inset / 6, 40, 50, IX_PROM);
+    }
+    box(6, 118, 62, 36, IX_RAIL); box(6, 118, 62, 3, IX_KERB); box(6, 150, 62, 4, IX_SHADOW);
+    for (int i = 0; i < 4; ++i) box(13 + i * 14, 128, 6, 8, (i & 1) ? IX_WINDOW : IX_WINDOW2);
+    for (int i = 0; i < 3; ++i) {
+        box(246 + i * 24, 158 - i * 2, 18, 7, (i & 1) ? IX_RAIL : IX_SEA1);
+        box(249 + i * 24, 160 - i * 2, 12, 3, IX_SHADOW);
+    }
+
+    /* The Fiat with its boot open, the amplifier and the loudspeakers out,
+     * the string of lights, the fire. */
+    draw_vehicle(duke_car_pixels, w_car, DUKE_CAR_COLOURS, 6, 286, 182);
+    for (int i = 0; i < 2; ++i) {
+        int x = i ? 232 : 74, thump = (int)((s_tick >> 2) & 1u);
+        box(x, 152, 14, 22, IX_BLACK);
+        box(x + 3 - thump, 155 - thump, 8 + 2 * thump, 8 + 2 * thump, IX_PARTY0);
+        box(x + 4, 166, 6, 6, IX_PARTY1);
+    }
+    for (int i = 0; i < 16; ++i)
+        box(74 + i * 11, 146 + ((i * 5) & 3), 3, 3, (i & 1) ? IX_PARTY0 : IX_PARTY1);
+    box(156, 190, 10, 4, IX_SHADOW);
+    box(158, 184 - (int)(s_tick & 2u), 6, 7, IX_SPARK);
+    box(160, 186, 2, 4, IX_RED);
+
+    for (int i = 0; i < 7; ++i) dancer(98 + i * 19, 158, i);
+    for (int i = 0; i < 8; ++i) dancer(88 + i * 19, 176, i + 7);
+
+    box(40, 2, 240, 34, IX_BLACK);
+    box(40, 2, 240, 2, IX_PARTY0);
+    box(40, 34, 240, 2, IX_PARTY1);
+    text_centred(8, "PARTY TIME AT THE GAIOLA!", PRG32_COLOR_YELLOW);
+    text(96, 21, "SCORE", PRG32_COLOR_CYAN);
+    text(144, 21, duke_utoa((unsigned)s_score, buf, 6), PRG32_COLOR_WHITE);
+    if (s_tick & 16u) text(200, 21, "START", PRG32_COLOR_YELLOW);
 }
 
 /* ---- exported ABI: dukes_init / dukes_update / dukes_draw -------------- */
@@ -1681,6 +1965,10 @@ void dukes_draw(void) {
         draw_title();
         return;
     }
+    if (s_state == ST_WIN) {
+        draw_ending();
+        return;
+    }
 
     draw_world();
     draw_hud();
@@ -1688,8 +1976,6 @@ void dukes_draw(void) {
     if (s_state == ST_PAUSED) {
         draw_panel("PAUSED", "EASY PAST THE POLIZIA", "A: HORN   B: LIGHT A RAUTO", IX_WHITE,
                    PRG32_COLOR_CYAN);
-    } else if (s_state == ST_WIN) {
-        draw_panel("PARTY TIME!", "YOU MADE IT TO THE VILLA", 0, IX_PARTY0, PRG32_COLOR_YELLOW);
     } else if (s_state == ST_LOSE) {
         const char *why = "THEY STOLE THE CINQUECENTO!";
         if (s_lose_reason == REASON_GAS) why = "RAN DRY IN THE VICOLI!";
@@ -1741,6 +2027,16 @@ void duke_test_teleport(int x, int y) {
 }
 void duke_test_clear_enemies(void) {
     for (int i = 0; i < MAX_ENEMIES; ++i) s_enemies[i].active = 0;
+    for (int i = 0; i < MAX_TRAFFIC; ++i) s_traffic[i].active = 0;
+}
+int duke_test_traffic(int i, int *x, int *y, int *kind, int *dir) {
+    *x = s_traffic[i].x; *y = s_traffic[i].y; *kind = s_traffic[i].kind; *dir = s_traffic[i].dir;
+    return s_traffic[i].active;
+}
+void duke_test_place_traffic(int i, int kind, int dir, int x, int y) {
+    duke_traffic_t *t = &s_traffic[i];
+    t->x = (int16_t)x; t->y = (int16_t)y;
+    t->kind = (uint8_t)kind; t->dir = (uint8_t)dir; t->active = 1; t->acc = t->wait = 0;
 }
 void duke_test_place_enemy(int i, int kind, int x, int y) {
     duke_enemy_t *e = &s_enemies[i];
