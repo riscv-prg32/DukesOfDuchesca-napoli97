@@ -65,8 +65,9 @@ enum { ST_TITLE = 0, ST_PLAYING, ST_PAUSED, ST_WIN, ST_LOSE };
 #define SPEED_LIMIT 32
 #define KIND_SCOOTER 0
 #define KIND_POLICE 1
-#define MAX_TRAFFIC 6
+#define MAX_TRAFFIC 7
 #define TRAFFIC_BUS 4
+#define TRAFFIC_TRUCK 5
 
 #define BTN_LEFT (1u << 0)
 #define BTN_RIGHT (1u << 1)
@@ -80,7 +81,9 @@ static const char *s_dump_dir;
 static int s_teleported; /* a test put the car somewhere by hand this frame */
 static int s_poi_pending, s_poi_shot;
 static long s_frames, s_parity_frames;
-static int s_max_enemies_seen, s_box_seen, s_cars_seen, s_buses_seen, s_traffic_shot;
+static int s_max_enemies_seen, s_box_seen, s_cars_seen, s_buses_seen, s_trucks_seen, s_traffic_shot;
+
+static int traffic_half(int kind) { return kind == TRAFFIC_BUS ? 11 : (kind == TRAFFIC_TRUCK ? 10 : 6); }
 static unsigned s_poi_seen; /* a bit per point of interest the car has been at */
 
 static void dump(const char *name) {
@@ -131,11 +134,27 @@ static void frame(uint32_t input) {
             /* Traffic keeps to the streets and never runs the Fiat over. */
             uint8_t under = cm_tile_at(tx >> 3, ty >> 3);
             assert(under == CM_T_ROAD || under == CM_T_ROAD_LINE || under == CM_T_PROMENADE);
-            int length = kind == TRAFFIC_BUS ? 11 : 6;
+            int length = traffic_half(kind);
             int hx = (dir & 1) ? length : 4, hy = (dir & 1) ? 4 : length;
-            if (st == ST_PLAYING && !s_teleported)
+            if (st == ST_PLAYING && !s_teleported) {
                 assert(abs(px - tx) >= 4 + hx || abs(py - ty) >= 4 + hy);
-            if (kind == TRAFFIC_BUS) s_buses_seen++; else s_cars_seen++;
+                /* Nor a scooter or a patrol car, nor one another. */
+                for (int e = 0; e < MAX_ENEMIES; ++e) {
+                    int ex, ey;
+                    if (duke_test_enemy(e, &ex, &ey))
+                        assert(abs(ex - tx) >= 4 + hx || abs(ey - ty) >= 4 + hy);
+                }
+                for (int j = i + 1; j < MAX_TRAFFIC; ++j) {
+                    int ox, oy, okind, odir;
+                    if (!duke_test_traffic(j, &ox, &oy, &okind, &odir)) continue;
+                    int olen = traffic_half(okind);
+                    assert(abs(ox - tx) >= hx + ((odir & 1) ? olen : 4) ||
+                           abs(oy - ty) >= hy + ((odir & 1) ? 4 : olen));
+                }
+            }
+            if (kind == TRAFFIC_BUS) s_buses_seen++;
+            else if (kind == TRAFFIC_TRUCK) s_trucks_seen++;
+            else s_cars_seen++;
             if (kind == TRAFFIC_BUS && !s_traffic_shot && abs(px - tx) < 50 && abs(py - ty) < 30 &&
                 duke_test_dusk() < 8) {
                 dump("14-traffic"); s_traffic_shot = 1;
@@ -408,6 +427,41 @@ int main(int argc, char **argv) {
     assert(closest <= 16); /* and it did come right up to it */
     assert(duke_test_trouble() == 1);
     duke_test_clear_enemies();
+
+    /* The trash truck crawls, and stops for three seconds at a time. */
+    duke_test_teleport(104 * 8 + 4, 46 * 8 + 4); /* watching from the side street */
+    duke_test_place_traffic(0, TRAFFIC_TRUCK, 1, 97 * 8 + 4, 49 * 8 + 4);
+    int moved = 0, still = 0, longest = 0, last_x = 0, last_y = 0, start_x;
+    assert(duke_test_traffic(0, &start_x, &last_y, &tk, &td));
+    last_x = start_x;
+    for (int i = 0; i < 420; ++i) {
+        frame(0);
+        assert(duke_test_traffic(0, &tx0, &ty0, &tk, &td) && tk == TRAFFIC_TRUCK);
+        if (tx0 == last_x && ty0 == last_y) { if (++still > longest) longest = still; }
+        else { still = 0; moved += abs(tx0 - last_x) + abs(ty0 - last_y); }
+        last_x = tx0; last_y = ty0;
+        if (still == 45) dump("16-trash-truck");
+    }
+    assert(longest >= 85 && longest <= 95);  /* three seconds at a stop */
+    assert(moved > 60 && moved < 420 * 5 / 8 + 2); /* 0.625 pixels a tick, when it moves at all */
+    /* A scooter that finds it across its lane does not drive through it:
+     * it turns back and takes another way. */
+    duke_test_clear_enemies();
+    duke_test_place_traffic(0, TRAFFIC_BUS, 1, 116 * 8 + 4, 49 * 8 + 4);
+    duke_test_place_enemy(0, KIND_SCOOTER, 124 * 8 + 4, 49 * 8 + 4);
+    duke_test_teleport(104 * 8 + 4, 49 * 8 + 4);
+    int got_round = 0;
+    for (int i = 0; i < 90 && !got_round; ++i) {
+        int sx, sy;
+        duke_test_place_traffic(0, TRAFFIC_BUS, 1, 116 * 8 + 4, 49 * 8 + 4); /* the bus stands still */
+        frame(0);
+        assert(duke_test_enemy(0, &sx, &sy));
+        assert(abs(sx - (116 * 8 + 4)) >= 4 + 11 || abs(sy - (49 * 8 + 4)) >= 8);
+        got_round = sx < 116 * 8 + 4 - 20;
+    }
+    assert(got_round);                /* past the bus, by another lane */
+    assert(duke_test_trouble() == 1);
+    duke_test_clear_enemies();
     s_teleported = 0;
 
     /* The police. A scooter with a patrol car beside it runs from the patrol,
@@ -433,7 +487,11 @@ int main(int argc, char **argv) {
     duke_test_place_enemy(0, KIND_POLICE, 117 * 8 + 4, 49 * 8 + 4);
     duke_test_set_rauti(20);
     int chased = 0;
-    for (int i = 0; i < 45 && !chased; ++i) { frame(BTN_RIGHT); chased = duke_test_chasing(); }
+    for (int i = 0; i < 45 && !chased; ++i) {
+        frame(BTN_RIGHT);
+        /* A patrol this close may catch the Fiat in the tick it starts after it. */
+        chased = duke_test_chasing() || duke_test_searches();
+    }
     assert(chased == 1);
     dump("11-chase");
     for (int i = 0; i < 300 && duke_test_searches() == 0; ++i) frame(0);
@@ -505,8 +563,9 @@ int main(int argc, char **argv) {
             if (losses == 1) { for (int i = 0; i < 40; ++i) frame(0); dump("08-lose"); }
         }
     }
-    printf("traffic: cars on %d frames, buses on %d\n", s_cars_seen, s_buses_seen);
-    assert(s_cars_seen > 1000 && s_buses_seen > 1000);
+    printf("traffic: cars on %d frames, buses on %d, the trash truck on %d\n", s_cars_seen, s_buses_seen,
+           s_trucks_seen);
+    assert(s_cars_seen > 1000 && s_buses_seen > 1000 && s_trucks_seen > 1000);
     printf("rauti: a box was picked up in traffic: %s\n", s_box_seen ? "yes" : "no");
     assert(s_box_seen);
     printf("autopilot, in traffic: %d wins, %d losses, %d unfinished, %d searches, up to %d cars around\n",

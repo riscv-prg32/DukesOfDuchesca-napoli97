@@ -36,10 +36,16 @@ Facing the wrong way it brakes while it turns, so a U-turn stays inside the
 street, and if you take a turning up to eight pixels early or late the car is
 nudged into the opening instead of stopping against the corner.
 
-**Traffic.** Other cars and the orange city buses share the streets. They are
-solid, so you go round them — keep the D-pad held and the Fiat changes lane
-by itself — and they never run you over: they stop and wait. Scooters and
-police weave through them.
+**Traffic.** Other cars, the orange city buses and the trash truck share the
+streets. They are solid for everybody — you, the scooters and the police —
+so everyone has to go round them: keep the D-pad held and the Fiat changes
+lane by itself; a scooter or a patrol car that finds its lane blocked turns
+back to the last crossing and takes another way. Traffic never runs anybody
+over: it stops and waits, so queues form. The **trash truck** is the serious
+obstacle: it crawls at a fifth of the Fiat's speed and every few seconds
+stops dead for three seconds, hazard lights on, to empty the bins. In a
+narrow cardo with something in the other lane, that is a road block — for
+you, and for whoever is chasing you.
 
 **The police.** Patrol cars cruise the streets (blue on the radar) and
 scooters run from them, so a patrol nearby is cover. But the white bar under
@@ -189,7 +195,8 @@ PRG32_REPO=/path/to/PRG32 ./test.sh
 - `tests/host_harness.c` runs the real `game.c`: it checks the rauto's fuse
   to the tick (driven away from: no damage; sat on: one knock) and the
   traffic (a bus in the lane is overtaken; an oncoming car never drives into
-  the Fiat), the police (a scooter runs from a patrol; a slow pass is ignored; speeding is
+  the Fiat; the trash truck stops for three seconds at a time; a scooter
+  goes round a bus, not through it), the police (a scooter runs from a patrol; a slow pass is ignored; speeding is
   chased and searched; a checkpoint at speed halts, a slow one waves on), an
   autopilot
   wins the game on empty streets (all eight items, refuelling on the way),

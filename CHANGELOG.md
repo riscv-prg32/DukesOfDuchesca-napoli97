@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.4.0 — 2026-10-05 — traffic is solid for everybody; the trash truck
+
+### New
+
+- **The trash truck.** Slow (a fifth of the Fiat's top speed), and every few
+  seconds it stops for three seconds, hazard lights flashing, to empty the
+  bins, blocking its lane. One is on its round near the car at any time.
+
+### Changed
+
+- **Scooters and police deal with traffic as the Fiat does.** A car, a bus or
+  the truck in their lane stops them: they turn back to the last crossing and
+  find another way. A bus can now be put between the Fiat and a scooter gang
+  or a patrol in pursuit.
+- **Traffic waits for everybody**: for scooters, patrol cars and other
+  traffic as well as for the Fiat, and does not swing round a corner over
+  any of them. Queues form behind the trash truck.
+- Nothing spawns on top of anything else.
+
 ## 2.3.0 — 2026-10-05 — the party is on the beach of the Gaiola; traffic
 
 ### New

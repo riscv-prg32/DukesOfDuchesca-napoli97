@@ -17,51 +17,51 @@ I (5) boot.esp32c3: SPI Flash Size : 4MB
 I (7) boot: Enabling RNG early entropy source...
 I (10) boot: Partition Table:
 I (10) boot: ## Label            Usage          Type ST Offset   Length
-I (10) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (11) boot:  0 nvs              WiFi data        01 02 00009000 00006000
 I (11) boot:  1 phy_init         RF data          01 01 0000f000 00001000
 I (12) boot:  2 factory          factory app      00 00 00010000 00200000
-I (12) boot:  3 cart0            Unknown data     01 40 00210000 00020000
+I (13) boot:  3 cart0            Unknown data     01 40 00210000 00020000
 I (13) boot:  4 cart1            Unknown data     01 41 00230000 00020000
-I (13) boot:  5 cart2            Unknown data     01 42 00250000 00020000
+I (14) boot:  5 cart2            Unknown data     01 42 00250000 00020000
 I (14) boot:  6 cart3            Unknown data     01 43 00270000 00020000
-I (14) boot:  7 scores           WiFi data        01 02 00290000 00020000
+I (15) boot:  7 scores           WiFi data        01 02 00290000 00020000
 I (15) boot: End of partition table
 I (16) esp_image: segment 0: paddr=00010020 vaddr=3c070020 size=49c1ch (302108) map
-I (52) esp_image: segment 1: paddr=00059c44 vaddr=3fc9d800 size=016a4h (  5796) load
-I (54) esp_image: segment 2: paddr=0005b2f0 vaddr=40380000 size=04d28h ( 19752) load
-I (57) esp_image: segment 3: paddr=00060020 vaddr=42000020 size=6f67ch (456316) map
-I (107) esp_image: segment 4: paddr=000cf6a4 vaddr=40384d28 size=18a6ch (100972) load
-I (118) esp_image: segment 5: paddr=000e8118 vaddr=50000200 size=0001ch (    28) load
-I (120) boot: Loaded app from partition at offset 0x10000
-I (120) boot: Disabling RNG early entropy source...
-I (129) cpu_start: Unicore app
-I (139) cpu_start: Pro cpu start user code
-I (139) cpu_start: cpu freq: 160000000 Hz
-I (139) app_init: Application information:
-I (139) app_init: Project name:     PRG32
-I (140) app_init: App version:      0.0.0-dev
-I (140) app_init: Compile time:     Oct  4 2026 21:04:30
-I (140) app_init: ELF file SHA256:  f804ede08...
-I (140) app_init: ESP-IDF:          v5.4
-I (140) efuse_init: Min chip rev:     v0.3
-I (140) efuse_init: Max chip rev:     v1.99 
-I (141) efuse_init: Chip rev:         v0.3
-I (141) heap_init: Initializing. RAM available for dynamic allocation:
-I (142) heap_init: At 3FCC8710 len 00014000 (80 KiB): Retention RAM
-I (142) heap_init: At 3FCDC710 len 00002950 (10 KiB): Retention RAM
-I (142) heap_init: At 5000021C len 00001DCC (7 KiB): RTCRAM
-I (146) spi_flash: detected chip: gd
-I (147) spi_flash: flash io: dio
-I (147) sleep_gpio: Configure to isolate all GPIO pins in sleep state
-I (148) sleep_gpio: Enable automatic switching of GPIO sleep configuration
-I (150) main_task: Started on CPU0
-I (150) main_task: Calling app_main()
+I (48) esp_image: segment 1: paddr=00059c44 vaddr=3fc9d800 size=016a4h (  5796) load
+I (50) esp_image: segment 2: paddr=0005b2f0 vaddr=40380000 size=04d28h ( 19752) load
+I (52) esp_image: segment 3: paddr=00060020 vaddr=42000020 size=6f67ch (456316) map
+I (100) esp_image: segment 4: paddr=000cf6a4 vaddr=40384d28 size=18a6ch (100972) load
+I (111) esp_image: segment 5: paddr=000e8118 vaddr=50000200 size=0001ch (    28) load
+I (112) boot: Loaded app from partition at offset 0x10000
+I (112) boot: Disabling RNG early entropy source...
+I (120) cpu_start: Unicore app
+I (130) cpu_start: Pro cpu start user code
+I (130) cpu_start: cpu freq: 160000000 Hz
+I (131) app_init: Application information:
+I (131) app_init: Project name:     PRG32
+I (131) app_init: App version:      0.0.0-dev
+I (131) app_init: Compile time:     Oct  4 2026 21:04:30
+I (131) app_init: ELF file SHA256:  f804ede08...
+I (132) app_init: ESP-IDF:          v5.4
+I (132) efuse_init: Min chip rev:     v0.3
+I (132) efuse_init: Max chip rev:     v1.99 
+I (132) efuse_init: Chip rev:         v0.3
+I (132) heap_init: Initializing. RAM available for dynamic allocation:
+I (133) heap_init: At 3FCC8710 len 00014000 (80 KiB): Retention RAM
+I (133) heap_init: At 3FCDC710 len 00002950 (10 KiB): Retention RAM
+I (134) heap_init: At 5000021C len 00001DCC (7 KiB): RTCRAM
+I (138) spi_flash: detected chip: gd
+I (139) spi_flash: flash io: dio
+I (139) sleep_gpio: Configure to isolate all GPIO pins in sleep state
+I (140) sleep_gpio: Enable automatic switching of GPIO sleep configuration
+I (142) main_task: Started on CPU0
+I (142) main_task: Calling app_main()
 PRG32 ROM: app_main entered
 PRG32 boot: app_main entered
-I (150) prg32_main: starting PRG32 runtime
+I (142) prg32_main: starting PRG32 runtime
 prg32_init()
 prg32_init => prg32_display_init()
-I (150) prg32_qemu: QEMU RGB framebuffer ready at 320x240
+I (142) prg32_qemu: QEMU RGB framebuffer ready at 320x240
 prg32_init => prg32_rgb_led_init()
 prg32_init => prg32_buzzer_init()
 
@@ -82,7 +82,7 @@ Heap Largest Free: 69632 B
 
 prg32_init => prg32_audio_load_global_settings()
 prg32_init => detect_audio_output()
-I (160) prg32_qemu_audio: UART1 initialized successfully.
+I (152) prg32_qemu_audio: UART1 initialized successfully.
 prg32_init => prg32_splash_show_default()
 prg32_init => prg32_input_init()
 prg32_input_init START
@@ -93,53 +93,53 @@ prg32_init => prg32_abi_exports_keep()
 prg32_init => prg32_cart_init()
 prg32_init => prg32_band_load_config()
 prg32_init => prg32_input_read_menu()
-I (1120) prg32_qemu_input: QEMU keyboard input enabled
+I (1092) prg32_qemu_input: QEMU keyboard input enabled
 prg32_init => prg32_cart_stored_count()
 prg32_init: stored cartridges=1
 prg32_init => prg32_wifi_setup_requested()
 prg32_init => prg32_cart_default_slot()
 prg32_init => autoload_cartridge()
-I (1140) prg32_cart: loaded cartridge 'dukesofduchesca-napoli97' (49092 bytes code, 51172 bytes memory, 5232 bytes audio)
+I (1112) prg32_cart: loaded cartridge 'dukesofduchesca-napoli97' (49876 bytes code, 51980 bytes memory, 5232 bytes audio)
 prg32_init => wifi_scores_init()
 prg32_init => scores_api_start()
 prg32_init => cart_is_loaded()
 prg32_init => cart_stored_count()
 prg32_init => cart_is_loaded()
-I (1160) prg32_main: PRG32 runtime initialized
+I (1142) prg32_main: PRG32 runtime initialized
 PLAY_TRACK SUCCESS: Starting track 0
-TRACKER TICK: active=1 accum=31 next_delta=1 index=22
-TRACKER TICK: active=1 accum=97 next_delta=2 index=33
-TRACKER TICK: active=1 accum=127 next_delta=1 index=42
-TRACKER TICK: active=1 accum=155 next_delta=2 index=51
-TRACKER TICK: active=1 accum=182 next_delta=1 index=60
+TRACKER TICK: active=1 accum=34 next_delta=1 index=22
+TRACKER TICK: active=1 accum=86 next_delta=2 index=33
+TRACKER TICK: active=1 accum=114 next_delta=1 index=42
+TRACKER TICK: active=1 accum=157 next_delta=2 index=51
+TRACKER TICK: active=1 accum=43 next_delta=2 index=62
 PLAY_TRACK SUCCESS: Starting track 1
-TRACKER TICK: active=1 accum=89 next_delta=1 index=21
-TRACKER TICK: active=1 accum=59 next_delta=1 index=43
-TRACKER TICK: active=1 accum=32 next_delta=1 index=65
-TRACKER TICK: active=1 accum=43 next_delta=1 index=87
-TRACKER TICK: active=1 accum=28 next_delta=1 index=113
-TRACKER TICK: active=1 accum=105 next_delta=1 index=143
-TRACKER TICK: active=1 accum=84 next_delta=1 index=177
-TRACKER TICK: active=1 accum=56 next_delta=1 index=211
-TRACKER TICK: active=1 accum=32 next_delta=1 index=245
-TRACKER TICK: active=1 accum=107 next_delta=1 index=277
-TRACKER TICK: active=1 accum=84 next_delta=1 index=311
-TRACKER TICK: active=1 accum=56 next_delta=1 index=345
-TRACKER TICK: active=1 accum=37 next_delta=1 index=380
-TRACKER TICK: active=1 accum=80 next_delta=1 index=418
-TRACKER TICK: active=1 accum=43 next_delta=1 index=462
-TRACKER TICK: active=1 accum=107 next_delta=1 index=500
-TRACKER TICK: active=1 accum=99 next_delta=1 index=538
-TRACKER TICK: active=1 accum=74 next_delta=1 index=576
-TRACKER TICK: active=1 accum=53 next_delta=1 index=614
-TRACKER TICK: active=1 accum=93 next_delta=1 index=652
-TRACKER TICK: active=1 accum=69 next_delta=1 index=21
-TRACKER TICK: active=1 accum=66 next_delta=1 index=43
-TRACKER TICK: active=1 accum=54 next_delta=1 index=65
-TRACKER TICK: active=1 accum=27 next_delta=1 index=87
-TRACKER TICK: active=1 accum=19 next_delta=1 index=113
-TRACKER TICK: active=1 accum=30 next_delta=1 index=147
-TRACKER TICK: active=1 accum=55 next_delta=1 index=181
-TRACKER TICK: active=1 accum=23 next_delta=1 index=215
-TRACKER TICK: active=1 accum=94 next_delta=1 index=245
-TRACKER TICK: active=1 accum=83 next_delta=1 index=279
+TRACKER TICK: active=1 accum=108 next_delta=1 index=21
+TRACKER TICK: active=1 accum=74 next_delta=1 index=43
+TRACKER TICK: active=1 accum=75 next_delta=1 index=65
+TRACKER TICK: active=1 accum=48 next_delta=1 index=87
+TRACKER TICK: active=1 accum=70 next_delta=1 index=113
+TRACKER TICK: active=1 accum=41 next_delta=1 index=149
+TRACKER TICK: active=1 accum=109 next_delta=1 index=181
+TRACKER TICK: active=1 accum=92 next_delta=1 index=215
+TRACKER TICK: active=1 accum=96 next_delta=1 index=249
+TRACKER TICK: active=1 accum=96 next_delta=1 index=285
+TRACKER TICK: active=1 accum=76 next_delta=1 index=323
+TRACKER TICK: active=1 accum=70 next_delta=1 index=357
+TRACKER TICK: active=1 accum=60 next_delta=1 index=394
+TRACKER TICK: active=1 accum=81 next_delta=1 index=432
+TRACKER TICK: active=1 accum=56 next_delta=1 index=475
+TRACKER TICK: active=1 accum=114 next_delta=1 index=513
+TRACKER TICK: active=1 accum=86 next_delta=1 index=551
+TRACKER TICK: active=1 accum=63 next_delta=1 index=589
+TRACKER TICK: active=1 accum=45 next_delta=1 index=627
+TRACKER TICK: active=1 accum=48 next_delta=1 index=665
+TRACKER TICK: active=1 accum=118 next_delta=1 index=26
+TRACKER TICK: active=1 accum=89 next_delta=1 index=48
+TRACKER TICK: active=1 accum=57 next_delta=1 index=70
+TRACKER TICK: active=1 accum=35 next_delta=1 index=92
+TRACKER TICK: active=1 accum=133 next_delta=1 index=119
+TRACKER TICK: active=1 accum=20 next_delta=1 index=155
+TRACKER TICK: active=1 accum=87 next_delta=1 index=187
+TRACKER TICK: active=1 accum=59 next_delta=1 index=221
+TRACKER TICK: active=1 accum=22 next_delta=1 index=255
+TRACKER TICK: active=1 accum=46 next_delta=1 index=289

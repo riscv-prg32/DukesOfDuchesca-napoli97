@@ -313,14 +313,19 @@ enum { MSG_NONE = 0, MSG_ITEM, MSG_GAS, MSG_ALL, MSG_LOW, MSG_HIT, MSG_NEED, MSG
 #define MAX_POLICE 3
 #define MAX_SCOOTERS 3
 
-/* Traffic: other cars, and the orange city buses. They keep to the streets,
- * mostly straight on, and are solid: the Fiat has to go round them, and they
- * wait rather than run it over. */
-#define MAX_TRAFFIC 6
+/* Traffic: other cars, the orange city buses, and the trash truck. They keep
+ * to the streets, mostly straight on, and are solid for everybody: the Fiat,
+ * the scooters and the police all have to go round them, and traffic waits
+ * rather than run anything over -- so queues form, most of all behind the
+ * trash truck, which crawls and stops every few seconds to empty the bins. */
+#define MAX_TRAFFIC 7
 #define MAX_BUSES 2
-#define TRAFFIC_BUS TRAFFIC_COLOURS /* kinds 0..3 are cars by paint, 4 is a bus */
+#define TRAFFIC_BUS TRAFFIC_COLOURS /* kinds 0..3 are cars by paint, 4 is a bus... */
+#define TRAFFIC_TRUCK (TRAFFIC_COLOURS + 1) /* ...and 5 the trash truck */
 #define CAR_HALF_LENGTH 6
 #define BUS_HALF_LENGTH 11
+#define TRUCK_HALF_LENGTH 10
+#define TRUCK_STOP_TICKS 90 /* three seconds at every stop */
 #define TRAFFIC_PATIENCE 60 /* ticks held up before turning back */
 
 #define MAX_ENEMIES 6
@@ -342,6 +347,7 @@ typedef struct {
 typedef struct {
     int16_t x, y;      /* world pixels; always on a tile-centre line */
     uint8_t kind, active, dir, acc, wait;
+    uint8_t stopped, timer; /* the trash truck: collecting, and ticks to the next change */
 } duke_traffic_t;
 
 typedef struct {
@@ -388,12 +394,17 @@ static uint32_t rnd(void) {
 static int player_x(void) { return (int)(s_player.x_q4 / Q4); }
 static int player_y(void) { return (int)(s_player.y_q4 / Q4); }
 
-/* Would the Fiat's box at (px,py) touch a car or a bus? */
+static int traffic_length(int kind) {
+    return kind == TRAFFIC_BUS ? BUS_HALF_LENGTH : (kind == TRAFFIC_TRUCK ? TRUCK_HALF_LENGTH : CAR_HALF_LENGTH);
+}
+
+/* Would a car-sized box at (px,py) -- the Fiat, a scooter, a patrol car --
+ * touch a vehicle of the traffic? */
 static int traffic_hits(int px, int py) {
     for (int i = 0; i < MAX_TRAFFIC; ++i) {
         const duke_traffic_t *t = &s_traffic[i];
         if (!t->active) continue;
-        int length = t->kind == TRAFFIC_BUS ? BUS_HALF_LENGTH : CAR_HALF_LENGTH;
+        int length = traffic_length(t->kind);
         int hx = (t->dir & 1) ? length : CM_CAR_HALF, hy = (t->dir & 1) ? CM_CAR_HALF : length;
         if (duke_abs(px - t->x) < CM_CAR_HALF + hx && duke_abs(py - t->y) < CM_CAR_HALF + hy) return 1;
     }
@@ -679,28 +690,52 @@ static int is_street(int tx, int ty) {
     return t == CM_T_ROAD || t == CM_T_ROAD_LINE || t == CM_T_PROMENADE;
 }
 
+/* Could vehicle `self` of the traffic stand at (x,y) facing `dir` without
+ * touching the Fiat, a scooter, a patrol car or another vehicle? */
+static int traffic_clear(int self, int x, int y, int dir) {
+    int length = traffic_length(s_traffic[self].kind);
+    int hx = (dir & 1) ? length : CM_CAR_HALF, hy = (dir & 1) ? CM_CAR_HALF : length;
+    if (duke_abs(player_x() - x) < CM_CAR_HALF + hx && duke_abs(player_y() - y) < CM_CAR_HALF + hy) return 0;
+    for (int i = 0; i < MAX_ENEMIES; ++i) {
+        const duke_enemy_t *e = &s_enemies[i];
+        if (e->active && duke_abs(e->x - x) < CM_CAR_HALF + hx && duke_abs(e->y - y) < CM_CAR_HALF + hy) return 0;
+    }
+    for (int i = 0; i < MAX_TRAFFIC; ++i) {
+        const duke_traffic_t *o = &s_traffic[i];
+        if (i == self || !o->active) continue;
+        int other = traffic_length(o->kind);
+        int ox = (o->dir & 1) ? other : CM_CAR_HALF, oy = (o->dir & 1) ? CM_CAR_HALF : other;
+        if (duke_abs(o->x - x) < hx + ox && duke_abs(o->y - y) < hy + oy) return 0;
+    }
+    return 1;
+}
+
 static void update_traffic(void) {
     int px = player_x(), py = player_y();
 
     if (s_enemies_on && --s_traffic_timer <= 0) {
-        int slot = -1, buses = 0;
+        int slot = -1, buses = 0, trucks = 0;
         s_traffic_timer = 20 + (int)(rnd() % 40u);
         for (int i = 0; i < MAX_TRAFFIC; ++i) {
             if (!s_traffic[i].active) { if (slot < 0) slot = i; }
             else if (s_traffic[i].kind == TRAFFIC_BUS) buses++;
+            else if (s_traffic[i].kind == TRAFFIC_TRUCK) trucks++;
         }
         int dx = (int)(rnd() % 45u) - 22, dy = (int)(rnd() % 45u) - 22;
         int tx = (px >> 3) + dx, ty = (py >> 3) + dy;
-        /* Off screen only, and on a street. */
+        /* Off screen only, on a street, and not on top of anything. */
         if (slot >= 0 && (duke_abs(dx) >= 12 || duke_abs(dy) >= 8) && is_street(tx, ty)) {
             duke_traffic_t *t = &s_traffic[slot];
+            uint32_t r = rnd();
             t->x = (int16_t)(tx * 8 + 4);
             t->y = (int16_t)(ty * 8 + 4);
-            t->active = 1;
-            t->acc = t->wait = 0;
-            t->dir = (uint8_t)(rnd() & 3u);
-            t->kind = (uint8_t)(buses < MAX_BUSES && (rnd() % 3u) == 0 ? TRAFFIC_BUS
-                                                                      : rnd() % TRAFFIC_COLOURS);
+            t->acc = t->wait = t->stopped = 0;
+            t->timer = (uint8_t)(60 + (r >> 8) % 100u);
+            t->dir = (uint8_t)(r & 3u);
+            if (trucks == 0 && (r >> 4) % 3u == 0) t->kind = TRAFFIC_TRUCK;
+            else if (buses < MAX_BUSES && (r >> 4) % 3u == 1) t->kind = TRAFFIC_BUS;
+            else t->kind = (uint8_t)((r >> 16) % TRAFFIC_COLOURS);
+            t->active = (uint8_t)traffic_clear(slot, t->x, t->y, t->dir);
         }
     }
 
@@ -708,10 +743,21 @@ static void update_traffic(void) {
         duke_traffic_t *t = &s_traffic[i];
         if (!t->active) continue;
         if (duke_abs(px - t->x) > 200 || duke_abs(py - t->y) > 200) { t->active = 0; continue; }
-        int length = t->kind == TRAFFIC_BUS ? BUS_HALF_LENGTH : CAR_HALF_LENGTH;
-        int budget = t->acc + (t->kind == TRAFFIC_BUS ? 16 : 24);
+        int speed = 24;
+        if (t->kind == TRAFFIC_BUS) speed = 16;
+        if (t->kind == TRAFFIC_TRUCK) {
+            /* The round: crawl a few metres, stop, empty the bins, crawl on. */
+            speed = 10;
+            if (--t->timer == 0) {
+                t->stopped = (uint8_t)!t->stopped;
+                t->timer = (uint8_t)(t->stopped ? TRUCK_STOP_TICKS : 110 + rnd() % 90u);
+            }
+            if (t->stopped) continue;
+        }
+        int budget = t->acc + speed;
         while (budget >= Q4) {
             budget -= Q4;
+            int held_up = 0;
             if ((t->x & 7) == 4 && (t->y & 7) == 4) {
                 /* At a tile centre: mostly straight on, sometimes a turn,
                  * back the way it came only out of a dead end. */
@@ -724,19 +770,15 @@ static void update_traffic(void) {
                     }
                     int turned = pick >= 0 ? pick : (t->dir + 2) & 3;
                     /* Swinging round changes the ground the vehicle covers:
-                     * not if that would sweep over the Fiat. */
-                    int tx_half = (turned & 1) ? length : CM_CAR_HALF, ty_half = (turned & 1) ? CM_CAR_HALF : length;
-                    if (((turned ^ t->dir) & 1) && duke_abs(px - t->x) < CM_CAR_HALF + tx_half &&
-                        duke_abs(py - t->y) < CM_CAR_HALF + ty_half)
-                        break;
-                    t->dir = (uint8_t)turned;
+                     * not if that would sweep over somebody. */
+                    if (((turned ^ t->dir) & 1) && !traffic_clear(i, t->x, t->y, turned)) held_up = 1;
+                    else t->dir = (uint8_t)turned;
                 }
             }
             int nx = t->x + dir_dx[t->dir], ny = t->y + dir_dy[t->dir];
-            if (!is_street(nx >> 3, ny >> 3)) { t->dir = (uint8_t)((t->dir + 2) & 3); break; }
-            int hx = (t->dir & 1) ? length : CM_CAR_HALF, hy = (t->dir & 1) ? CM_CAR_HALF : length;
-            if (duke_abs(px - nx) < CM_CAR_HALF + hx && duke_abs(py - ny) < CM_CAR_HALF + hy) {
-                /* The Fiat is in the way: wait, and after a while turn round. */
+            if (!held_up && !is_street(nx >> 3, ny >> 3)) { t->dir = (uint8_t)((t->dir + 2) & 3); break; }
+            if (held_up || !traffic_clear(i, nx, ny, t->dir)) {
+                /* Somebody is in the way: wait, and after a while turn back. */
                 if (++t->wait > TRAFFIC_PATIENCE) { t->wait = 0; t->dir = (uint8_t)((t->dir + 2) & 3); }
                 break;
             }
@@ -859,6 +901,7 @@ static void enemy_choose(duke_enemy_t *e) {
         int nx = tx + dir_dx[d], ny = ty + dir_dy[d];
         if (cm_tile_is_solid(cm_tile_at(nx, ny))) continue;
         if (d == ((e->dir + 2) & 3)) { fallback = d; continue; }
+        if (traffic_hits(e->x + dir_dx[d], e->y + dir_dy[d])) continue; /* a bus is in the way */
         open++;
         if ((rnd() % (uint32_t)open) == 0) random_pick = d;
         int32_t ddx = nx * 8 + 4 - goal_x, ddy = ny * 8 + 4 - goal_y;
@@ -887,7 +930,7 @@ static void spawn_enemy(void) {
         int dx = (int)(rnd() % 45u) - 22, dy = (int)(rnd() % 45u) - 22;
         if (duke_abs(dx) < 12 && duke_abs(dy) < 8) continue; /* off screen only */
         int tx = (player_x() >> 3) + dx, ty = (player_y() >> 3) + dy;
-        if (cm_tile_is_solid(cm_tile_at(tx, ty))) continue;
+        if (cm_tile_is_solid(cm_tile_at(tx, ty)) || traffic_hits(tx * 8 + 4, ty * 8 + 4)) continue;
         duke_enemy_t *e = &s_enemies[slot];
         e->x = (int16_t)(tx * 8 + 4);
         e->y = (int16_t)(ty * 8 + 4);
@@ -1007,6 +1050,12 @@ static void update_enemies(uint32_t pressed) {
             if ((e->x & 7) == 4 && (e->y & 7) == 4) enemy_choose(e);
             int nx = e->x + dir_dx[e->dir], ny = e->y + dir_dy[e->dir];
             if (cm_tile_is_solid(cm_tile_at(nx >> 3, ny >> 3))) break;
+            if (traffic_hits(nx, ny)) {
+                /* Traffic is as solid for them as for the Fiat: back to the
+                 * last crossing, and another way round from there. */
+                e->dir = (uint8_t)((e->dir + 2) & 3);
+                break;
+            }
             e->x = (int16_t)nx;
             e->y = (int16_t)ny;
         }
@@ -1509,7 +1558,7 @@ static void draw_checkpoints(int cam_x, int cam_y) {
     }
 }
 
-/* A city bus, drawn from rectangles: `along` runs from the tail (-) to the
+/* A city bus or the trash truck, drawn from rectangles: `along` runs from the tail (-) to the
  * nose (+), `across` from its left to its right, in world pixels. */
 static int s_bus_x, s_bus_y, s_bus_dir;
 
@@ -1530,11 +1579,33 @@ static void draw_traffic(int cam_x, int cam_y) {
         if (!t->active) continue;
         int sx = t->x * ZOOM - cam_x, sy = t->y * ZOOM - cam_y;
         if (sx < -60 || sy < -60 || sx > PRG32_GAME_W + 60 || sy > PRG32_GAME_H + 60) continue;
-        if (t->kind != TRAFFIC_BUS) {
+        if (t->kind < TRAFFIC_BUS) {
             draw_vehicle(duke_car_pixels, w_traffic[t->kind], DUKE_CAR_COLOURS, t->dir * 2, sx, sy);
             continue;
         }
         s_bus_x = sx; s_bus_y = sy; s_bus_dir = t->dir;
+        if (t->kind == TRAFFIC_TRUCK) {
+            int amber = (s_tick & 4u) ? IX_GAS : IX_SPARK;
+            bus_part(-11, -5, 22, 10, IX_SHADOW);  /* the outline */
+            bus_part(-11, -4, 15, 9, IX_TREE);     /* the green body */
+            bus_part(-8, -2, 10, 5, IX_PARK);
+            bus_part(-11, -3, 2, 7, IX_BLACK);     /* the hopper at the tail */
+            bus_part(5, -4, 6, 9, IX_RAIL);        /* the white cab */
+            bus_part(9, -3, 1, 7, IX_GLASS);
+            bus_part(6, -1, 2, 2, amber);          /* the beacon, always turning */
+            if (t->stopped) {
+                /* Collecting: hazard lights, two bins and a man in a hi-vis vest. */
+                bus_part(-11, -4, 1, 2, amber);
+                bus_part(-11, 3, 1, 2, amber);
+                bus_part(-15, -4, 3, 3, IX_TREE);
+                bus_part(-15, 1, 3, 3, IX_TREE);
+                bus_part(-14, -1 + (int)((s_tick >> 3) & 1u), 2, 2, IX_GAS);
+            } else {
+                bus_part(-11, -4, 1, 2, IX_RED);
+                bus_part(-11, 3, 1, 2, IX_RED);
+            }
+            continue;
+        }
         bus_part(-12, -5, 24, 10, IX_SHADOW);  /* the outline */
         bus_part(-12, -4, 23, 9, IX_GAS);      /* orange, like every bus in town */
         bus_part(-10, -3, 18, 1, IX_GLASS);    /* the side windows */
@@ -2037,6 +2108,7 @@ void duke_test_place_traffic(int i, int kind, int dir, int x, int y) {
     duke_traffic_t *t = &s_traffic[i];
     t->x = (int16_t)x; t->y = (int16_t)y;
     t->kind = (uint8_t)kind; t->dir = (uint8_t)dir; t->active = 1; t->acc = t->wait = 0;
+    t->stopped = 0; t->timer = 100;
 }
 void duke_test_place_enemy(int i, int kind, int x, int y) {
     duke_enemy_t *e = &s_enemies[i];
